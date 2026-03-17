@@ -582,7 +582,7 @@ function importLinkedInData() {
     const sourceRichTexts = selectedSheet.getRange(2, 10, sourceData.length, 1).getRichTextValues();
     // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
     const ts2 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
-    const newSheet2Name = `${COMPANY_CONFIG[cfg.name].sheet2Name}_${ts2}`;
+    const newSheet2Name = `linkedin_${cfg.name}_${ts2}`;
     const targetSheet = ss.insertSheet(newSheet2Name);
     PropertiesService.getScriptProperties().setProperty(`sheet2Name_${cfg.name}`, newSheet2Name);
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
@@ -615,7 +615,7 @@ function importRememberData() {
     const sourceRichTexts = selectedSheet.getRange(2, 2, sourceData.length, 1).getRichTextValues();
     // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
     const ts1 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
-    const newSheet1Name = `${COMPANY_CONFIG[cfg.name].sheet1Name}_${ts1}`;
+    const newSheet1Name = `Remember_${cfg.name}_${ts1}`;
     const targetSheet = ss.insertSheet(newSheet1Name);
     PropertiesService.getScriptProperties().setProperty(`sheet1Name_${cfg.name}`, newSheet1Name);
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
