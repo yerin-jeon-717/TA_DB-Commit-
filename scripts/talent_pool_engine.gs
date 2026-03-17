@@ -1,11 +1,13 @@
 /**
- * [v20.1] 인재풀 엔진 - 중복 탐지 Gate 방식 + 리포트 프로필 링크 추가
+ * [v20.2] 인재풀 엔진
  * 변경 내역:
- * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리 (기존: - 만 처리)
- * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입 (불일치 즉시 제외)
- * 3. [UX] 리포트에 체크박스 + 처리구분(자동병합/검토필요) + 입사년월 컬럼 추가
- * 4. [UX] 리포트에 리멤버/링크드인 프로필 링크 컬럼 추가 (클릭 바로 이동)
- * 5. [FIX] applyDuplicateSelections: 새 리포트 컬럼 인덱스 반영 (s2행: [8]→[10])
+ * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
+ * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
+ * 3. [UX] 리포트 체크박스 + 처리구분 + 입사년월 + 프로필 링크 컬럼 추가
+ * 4. [FIX] applyDuplicateSelections: 이름·링크드인URL 이식, 직책 메모 추가, 리포트 초기화
+ * 5. [NEW] mergeLinkedinIntoRemember: 링크드인 잔여 데이터 → 리멤버 시트에 append
+ * 6. [NEW] buildCategoryMappingReport: F/G열 고유값 → 카테고리 매핑 시트 생성
+ * 7. [NEW] applyCategoryMapping: 매핑 시트 기반 F/G열 일괄 업데이트
  */
 
 const COMPANY_CONFIG = {
@@ -25,11 +27,12 @@ const COMPANY_CONFIG = {
   }
 };
 
-const SHEET_DUP_REPORT = "🔍 중복_대조_리포트";
+const SHEET_DUP_REPORT    = "🔍 중복_대조_리포트";
+const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.1')
+  ui.createMenu('🚀 인재풀 엔진 v20.2')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -40,7 +43,13 @@ function onOpen() {
     .addSeparator()
     .addSubMenu(ui.createMenu('📂 2. 데이터 통합 (중복/매핑)')
       .addItem('🔎 중복 대조 리포트 생성 (Gate 방식)', 'runDuplicateScan')
-      .addItem('🔗 선택 중복 병합/삭제 실행', 'applyDuplicateSelections'))
+      .addItem('🔗 선택 중복 병합/삭제 실행', 'applyDuplicateSelections')
+      .addSeparator()
+      .addItem('🔀 링크드인 잔여 데이터 → 리멤버 시트에 합치기', 'mergeLinkedinIntoRemember'))
+    .addSeparator()
+    .addSubMenu(ui.createMenu('🏷️ 3. 팀/직책 카테고리 정규화')
+      .addItem('📋 카테고리 매핑 시트 생성 (고유값 추출)', 'buildCategoryMappingReport')
+      .addItem('✅ 카테고리 매핑 적용 (현재 시트)', 'applyCategoryMapping'))
     .addSeparator()
     .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
     .addItem('⚪ 리포트 서식 초기화', 'clearAllColors')
@@ -279,7 +288,7 @@ function runDuplicateScan() {
 }
 
 // ==========================================
-// ■ [v20.1] 병합 실행 — 새 리포트 컬럼 인덱스 반영
+// ■ [v20.2] 병합 실행
 // 리포트 컬럼: [0]선택 [1]처리 [2]입사년월 [3]일치항목
 //             [4]s1행 [5]s1이름 [6]s1리멤버 [7]s1링크드인 [8]s1경력 [9]s1학력
 //             [10]s2행 [11]s2이름 [12]s2리멤버 [13]s2링크드인 [14]s2경력 [15]s2학력
@@ -288,35 +297,202 @@ function applyDuplicateSelections() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reportSheet = ss.getSheetByName(SHEET_DUP_REPORT);
   const cfg = getOrSelectCompany(); if (!cfg) return;
-  const targetSheet = ss.getSheetByName(cfg.sheet1Name);
-  const newSheet    = ss.getSheetByName(cfg.sheet2Name);
+  const targetSheet = ss.getSheetByName(cfg.sheet1Name); // 리멤버
+  const newSheet    = ss.getSheetByName(cfg.sheet2Name); // 링크드인
   if (!reportSheet || !targetSheet || !newSheet) return;
 
-  const rData = reportSheet.getDataRange().getValues();
-  const tMap = getColMap(targetSheet);
-  const liColIdx = tMap["링크드인 페이지"] + 1; // 1-based
+  const rData  = reportSheet.getDataRange().getValues();
+  const tMap1  = getColMap(targetSheet);
+  const tMap2  = getColMap(newSheet);
+
+  // 리멤버 시트 컬럼 인덱스 (1-based)
+  const nameColIdx = tMap1["이름"]           + 1; // B열
+  const liColIdx   = tMap1["링크드인 페이지"] + 1; // D열
+  const posColIdx  = tMap1["직책"]           + 1; // G열
+
+  // 링크드인 시트 컬럼 인덱스 (1-based)
+  const li_nameIdx = tMap2["이름"]            + 1;
+  const li_liIdx   = tMap2["링크드인 페이지"] + 1;
+  const li_posIdx  = tMap2["직책"]            + 1;
 
   const rowsToDelete = [];
+
   for (let i = 1; i < rData.length; i++) {
-    if (rData[i][0] !== true) continue; // 체크박스 선택된 행만
+    if (rData[i][0] !== true) continue; // 체크박스 선택 행만
 
-    const aIdx = rData[i][4];  // [4] = sheet1 행 번호
-    const bIdx = rData[i][10]; // [10] = sheet2 행 번호
+    const aIdx = rData[i][4];  // sheet1(리멤버) 행 번호
+    const bIdx = rData[i][10]; // sheet2(링크드인) 행 번호
 
-    // sheet2의 LinkedIn URL → sheet1에 이식
-    const bRichText = newSheet.getRange(bIdx, liColIdx).getRichTextValue();
-    if (bRichText && bRichText.getLinkUrl()) {
+    // 1. 링크드인 이름 → 리멤버 B열 덮어쓰기
+    const liName = newSheet.getRange(bIdx, li_nameIdx).getValue();
+    if (liName) targetSheet.getRange(aIdx, nameColIdx).setValue(liName);
+
+    // 2. 링크드인 페이지 URL → 리멤버 D열 이식 (RichText)
+    const liLinkRt = newSheet.getRange(bIdx, li_liIdx).getRichTextValue();
+    if (liLinkRt && liLinkRt.getLinkUrl()) {
       targetSheet.getRange(aIdx, liColIdx).setRichTextValue(
-        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(bRichText.getLinkUrl()).build()
+        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(liLinkRt.getLinkUrl()).build()
       );
     }
+
+    // 3. 링크드인 직책 → 리멤버 G열 셀에 메모 추가
+    const liPos = newSheet.getRange(bIdx, li_posIdx).getValue();
+    if (liPos) {
+      const cell = targetSheet.getRange(aIdx, posColIdx);
+      const existing = cell.getNote();
+      cell.setNote(existing ? `${existing}\n[LinkedIn] ${liPos}` : `[LinkedIn] ${liPos}`);
+    }
+
     rowsToDelete.push(bIdx);
   }
 
-  // 중복 제거 후 역순 삭제 (인덱스 밀림 방지)
+  // 역순 삭제 (인덱스 밀림 방지)
   [...new Set(rowsToDelete)].sort((a, b) => b - a).forEach(idx => newSheet.deleteRow(idx));
 
-  SpreadsheetApp.getUi().alert(`✅ 병합 완료: ${rowsToDelete.length}건 처리`);
+  // 리포트 시트 초기화
+  reportSheet.clear();
+
+  SpreadsheetApp.getUi().alert(`✅ 병합 완료: ${rowsToDelete.length}건 처리\n리포트 시트가 초기화되었습니다.`);
+}
+
+// ==========================================
+// ■ [v20.2] 링크드인 잔여 데이터 → 리멤버 시트에 append
+// 중복 처리 후 링크드인 시트에 남은 행(리멤버에 없는 인재)을 리멤버 시트 하단에 붙임.
+// 링크드인 시트는 작업 후 숨김 처리.
+// ==========================================
+function mergeLinkedinIntoRemember() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const cfg = getOrSelectCompany(); if (!cfg) return;
+  const remSheet = ss.getSheetByName(cfg.sheet1Name);
+  const liSheet  = ss.getSheetByName(cfg.sheet2Name);
+  if (!remSheet || !liSheet) return ui.alert('❌ 시트가 없습니다.');
+
+  const liData = liSheet.getDataRange().getValues().slice(1); // 헤더 제외
+  if (liData.length === 0) return ui.alert('링크드인 시트에 남은 데이터가 없습니다.');
+
+  // 링크드인 시트의 RichText (C열=리멤버링크, D열=링크드인링크) 읽기
+  const tMap2  = getColMap(liSheet);
+  const liRemColIdx = tMap2["리멤버 페이지"]  + 1;
+  const liLiColIdx  = tMap2["링크드인 페이지"] + 1;
+  const rtC = liSheet.getRange(2, liRemColIdx, liData.length, 1).getRichTextValues();
+  const rtD = liSheet.getRange(2, liLiColIdx,  liData.length, 1).getRichTextValues();
+
+  // 리멤버 시트에 append (setValues로 텍스트 먼저)
+  const startRow = remSheet.getLastRow() + 1;
+  remSheet.getRange(startRow, 1, liData.length, liData[0].length).setValues(liData);
+
+  // C·D열 RichText 이식 (Pinpoint Update — C·D열만 별도 처리)
+  const tMap1     = getColMap(remSheet);
+  const remColIdx = tMap1["리멤버 페이지"]  + 1;
+  const liColIdx  = tMap1["링크드인 페이지"] + 1;
+  remSheet.getRange(startRow, remColIdx, liData.length, 1).setRichTextValues(rtC);
+  remSheet.getRange(startRow, liColIdx,  liData.length, 1).setRichTextValues(rtD);
+
+  // 링크드인 시트 숨김
+  liSheet.hideSheet();
+
+  ui.alert(`✅ 완료: 링크드인 잔여 ${liData.length}건을 리멤버 시트에 추가했습니다.\n링크드인 시트는 숨김 처리되었습니다.`);
+}
+
+// ==========================================
+// ■ [v20.2] 팀/직책 카테고리 매핑 — STEP 1: 고유값 추출
+// 현재 시트의 F열(팀), G열(직책) 고유값을 카테고리 매핑 시트에 나열.
+// 사용자가 '표준 카테고리' 열을 채운 뒤 applyCategoryMapping 실행.
+// ==========================================
+function buildCategoryMappingReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const tMap = getColMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return SpreadsheetApp.getUi().alert('데이터가 없습니다.');
+
+  const teamIdx = tMap["팀"]  + 1; // F열 (1-based)
+  const posIdx  = tMap["직책"] + 1; // G열
+
+  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+
+  // 고유값 수집 (타입별 분리)
+  const teamSet = new Set(), posSet = new Set();
+  data.forEach(row => {
+    const t = String(row[tMap["팀"]]  || '').trim(); if (t) teamSet.add(t);
+    const p = String(row[tMap["직책"]] || '').trim(); if (p) posSet.add(p);
+  });
+
+  // 매핑 시트 작성
+  let mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
+  if (!mapSheet) mapSheet = ss.insertSheet(SHEET_CATEGORY_MAP);
+  else mapSheet.clear();
+
+  const headers = ['타입', '원본값', '표준 카테고리', '비고'];
+  mapSheet.appendRow(headers);
+  mapSheet.getRange(1, 1, 1, 4).setBackground('#34a853').setFontColor('#ffffff').setFontWeight('bold');
+
+  const rows = [];
+  [...teamSet].sort().forEach(v => rows.push(['팀', v, '', '']));
+  [...posSet].sort().forEach(v => rows.push(['직책', v, '', '']));
+
+  if (rows.length > 0) {
+    mapSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+    // 표준 카테고리 열 노란색 강조 (사용자 입력 구간)
+    mapSheet.getRange(2, 3, rows.length, 1).setBackground('#fff9c4');
+  }
+
+  mapSheet.activate();
+  SpreadsheetApp.getUi().alert(
+    `✅ 완료: 팀 ${teamSet.size}개, 직책 ${posSet.size}개 고유값을 추출했습니다.\n` +
+    `'${SHEET_CATEGORY_MAP}' 시트의 C열(표준 카테고리)을 채운 뒤 '카테고리 매핑 적용'을 실행하세요.`
+  );
+}
+
+// ==========================================
+// ■ [v20.2] 팀/직책 카테고리 매핑 — STEP 2: 매핑 적용
+// 카테고리 매핑 시트를 참조하여 현재 시트 F·G열을 일괄 업데이트.
+// 표준 카테고리가 비어 있는 값은 원본 유지.
+// ==========================================
+function applyCategoryMapping() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
+  if (!mapSheet) return ui.alert(`❌ '${SHEET_CATEGORY_MAP}' 시트가 없습니다. 먼저 고유값 추출을 실행하세요.`);
+
+  const mapData = mapSheet.getDataRange().getValues().slice(1); // 헤더 제외
+
+  // 팀·직책 매핑 테이블 생성
+  const teamMap = {}, posMap = {};
+  mapData.forEach(row => {
+    const type = String(row[0]).trim();
+    const original = String(row[1]).trim();
+    const standard = String(row[2]).trim();
+    if (!standard) return; // 표준값 미입력 → 스킵
+    if (type === '팀')   teamMap[original] = standard;
+    if (type === '직책') posMap[original]  = standard;
+  });
+
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const tMap  = getColMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return ui.alert('데이터가 없습니다.');
+
+  const teamColIdx = tMap["팀"]  + 1; // F열 (1-based)
+  const posColIdx  = tMap["직책"] + 1; // G열
+
+  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  let updatedCount = 0;
+
+  data.forEach((row, i) => {
+    const rowNum = i + 2;
+    const origTeam = String(row[tMap["팀"]]  || '').trim();
+    const origPos  = String(row[tMap["직책"]] || '').trim();
+    if (origTeam && teamMap[origTeam]) {
+      sheet.getRange(rowNum, teamColIdx).setValue(teamMap[origTeam]);
+      updatedCount++;
+    }
+    if (origPos && posMap[origPos]) {
+      sheet.getRange(rowNum, posColIdx).setValue(posMap[origPos]);
+      updatedCount++;
+    }
+  });
+
+  ui.alert(`✅ 완료: ${updatedCount}개 셀이 표준 카테고리로 업데이트되었습니다.`);
 }
 
 // ==========================================
