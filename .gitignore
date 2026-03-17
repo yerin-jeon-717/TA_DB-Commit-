@@ -1,0 +1,8 @@
+.env
+configs/token.json
+configs/config.json
+data/applicants/*.json
+logs/
+node_modules/
+*.session.json
+remember_session.json
