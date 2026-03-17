@@ -161,7 +161,7 @@ function extractCompaniesFromCareer(text) {
 
 ---
 
-## GAS Architecture (v19.28)
+## GAS Architecture (v20.3)
 | 함수 | 역할 |
 |------|------|
 | `importLinkedInData()` | 링크드인 raw → 통합 시트 가져오기, RichText URL 이식 |
@@ -169,10 +169,46 @@ function extractCompaniesFromCareer(text) {
 | `translateNameColumn()` | 영문명 → 국문 번역 병기 |
 | `unifyFormatLinkedinToRemember()` | 재직기간/이전경력 포맷 정규화 (역산 포함) |
 | `updateCurrentSheetCareer()` | 총 경력 합산 계산 |
-| `runDuplicateScan()` | 중복 대조 리포트 생성 |
+| `runDuplicateScan()` | 중복 대조 리포트 생성 (Gate 방식) |
 | `applyDuplicateSelections()` | 선택 중복 병합 실행 (LinkedIn URL 이식 후 삭제) |
+| `mergeLinkedinIntoRemember()` | 링크드인 잔여 데이터 → 리멤버 시트 append + 링크드인 시트 숨김 |
+| `buildCategoryMappingReport()` | F/G열 고유값 추출 → 카테고리 매핑 시트 생성 |
+| `applyCategoryMapping()` | 매핑 시트 기반 F/G열 일괄 업데이트 |
 | `runRegionMapping()` | Region 자동 태깅 |
 | `getOrSelectCompany()` | 현재 작업 대상 회사 선택/캐시 (ScriptProperties) |
+
+---
+
+## 데이터 통합 실행 순서 (반드시 준수)
+
+> **순서 위반 시 D열(링크드인 URL) 미이식, 전체 데이터 중복 append 등의 오류 발생**
+
+### STEP 1. 데이터 준비
+```
+📥 링크드인 데이터 가져오기
+📥 리멤버 데이터 가져오기
+🔤 이름 열 국문 번역
+🧹 포맷 통일(링크드인 > 리멤버)
+🚀 총 경력 합산 업데이트
+```
+
+### STEP 2. 중복 처리 (순서 고정)
+```
+1. 🔎 중복 대조 리포트 생성         ← Gate 방식, 체크박스 자동 세팅
+2. 🔗 선택 중복 병합/삭제 실행      ← A열 체크된 행만 처리 (이름·URL·직책 이식 후 링크드인 행 삭제)
+3. 🔀 링크드인 잔여 → 리멤버 합치기 ← 2번 미실행 시 경고 팝업 발생
+```
+
+### 중복 처리 결과 확인 포인트
+- C열(리멤버 URL) + D열(링크드인 URL) **모두 있는 행** = 중복 병합 완료된 인원
+- C열만 있음 = 리멤버 원본 / D열만 있음 = 링크드인 원본 (병합 대상 아님)
+
+### 링크드인 데이터 업데이트 시 (A안 — 숨김 유지)
+```
+1. 링크드인 시트 언숨기기 (시트 탭 우클릭 → 숨겨진 시트 보기)
+2. 새 크롤링 데이터로 교체
+3. STEP 2 순서대로 재실행
+```
 
 ---
 
@@ -195,6 +231,8 @@ function extractCompaniesFromCareer(text) {
 
 ## Known Issues & TODO
 - [x] 중복 탐지 재설계 — Gate 방식 구현 + `extractNonAprCompanies` 정규식 수정 (`scripts/talent_pool_engine.gs` v20.0)
+- [x] `applyDuplicateSelections` D열 URL 이식 버그 수정 (getLinkUrl null 시 텍스트 fallback, v20.3)
+- [x] `mergeLinkedinIntoRemember` 실행 순서 가드 추가 (중복 리포트 미처리 경고, v20.3)
 - [ ] 기업명 마스터 매핑 테이블 구축 (15개사 + 업계 주요사)
 - [ ] 통합 시트 스키마 기준 데이터 정합성 검증 자동화
 - [ ] 웹 검색 엔진 스택 결정 및 구현 (Vercel)

@@ -1,5 +1,5 @@
 /**
- * [v20.2] 인재풀 엔진
+ * [v20.3] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -8,6 +8,14 @@
  * 5. [NEW] mergeLinkedinIntoRemember: 링크드인 잔여 데이터 → 리멤버 시트에 append
  * 6. [NEW] buildCategoryMappingReport: F/G열 고유값 → 카테고리 매핑 시트 생성
  * 7. [NEW] applyCategoryMapping: 매핑 시트 기반 F/G열 일괄 업데이트
+ * 8. [BUG FIX v20.3] applyDuplicateSelections: D열 링크드인 URL 이식 — getLinkUrl() null 시 텍스트 fallback 추가
+ * 9. [GUARD v20.3] mergeLinkedinIntoRemember: 중복 리포트 미처리 시 경고 팝업 추가
+ * 10. [UX v20.4] buildCategoryMappingReport: 표준 카테고리 열에 팀/직책 분리 드롭다운 추가
+ *
+ * ★ 데이터 통합 실행 순서 (반드시 준수):
+ *   STEP 1. 🔎 중복 대조 리포트 생성
+ *   STEP 2. 🔗 선택 중복 병합/삭제 실행  ← 이 단계 생략 시 STEP 3에서 경고 팝업 발생
+ *   STEP 3. 🔀 링크드인 잔여 데이터 → 리멤버 시트에 합치기
  */
 
 const COMPANY_CONFIG = {
@@ -327,12 +335,17 @@ function applyDuplicateSelections() {
     const liName = newSheet.getRange(bIdx, li_nameIdx).getValue();
     if (liName) targetSheet.getRange(aIdx, nameColIdx).setValue(liName);
 
-    // 2. 링크드인 페이지 URL → 리멤버 D열 이식 (RichText)
+    // 2. 링크드인 페이지 URL → 리멤버 D열 이식 (RichText + 텍스트 fallback)
     const liLinkRt = newSheet.getRange(bIdx, li_liIdx).getRichTextValue();
-    if (liLinkRt && liLinkRt.getLinkUrl()) {
+    const liLinkUrl = liLinkRt ? liLinkRt.getLinkUrl() : null;
+    const liLinkText = liLinkRt ? liLinkRt.getText() : '';
+    if (liLinkUrl) {
       targetSheet.getRange(aIdx, liColIdx).setRichTextValue(
-        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(liLinkRt.getLinkUrl()).build()
+        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(liLinkUrl).build()
       );
+    } else if (liLinkText && liLinkText.trim() !== '' && liLinkText.trim() !== '-') {
+      // URL 없이 텍스트만 있는 경우 (plain text URL 포함) 그대로 이식
+      targetSheet.getRange(aIdx, liColIdx).setValue(liLinkText.trim());
     }
 
     // 3. 링크드인 직책 → 리멤버 G열 셀에 메모 추가
@@ -366,6 +379,18 @@ function mergeLinkedinIntoRemember() {
   const remSheet = ss.getSheetByName(cfg.sheet1Name);
   const liSheet  = ss.getSheetByName(cfg.sheet2Name);
   if (!remSheet || !liSheet) return ui.alert('❌ 시트가 없습니다.');
+
+  // ── 가드: 중복 리포트 미처리 시 경고 ──
+  const reportSheet = ss.getSheetByName(SHEET_DUP_REPORT);
+  if (reportSheet && reportSheet.getLastRow() > 1) {
+    const res = ui.alert(
+      '⚠️ 중복 리포트 미처리',
+      `'${SHEET_DUP_REPORT}' 시트에 처리되지 않은 중복 데이터가 있습니다.\n` +
+      `먼저 [선택 중복 병합/삭제 실행]을 완료하세요.\n\n그래도 진행하시겠습니까?`,
+      ui.ButtonSet.YES_NO
+    );
+    if (res !== ui.Button.YES) return;
+  }
 
   const liData = liSheet.getDataRange().getValues().slice(1); // 헤더 제외
   if (liData.length === 0) return ui.alert('링크드인 시트에 남은 데이터가 없습니다.');
@@ -427,14 +452,33 @@ function buildCategoryMappingReport() {
   mapSheet.appendRow(headers);
   mapSheet.getRange(1, 1, 1, 4).setBackground('#34a853').setFontColor('#ffffff').setFontWeight('bold');
 
-  const rows = [];
-  [...teamSet].sort().forEach(v => rows.push(['팀', v, '', '']));
-  [...posSet].sort().forEach(v => rows.push(['직책', v, '', '']));
+  const teamRows = [...teamSet].sort().map(v => ['팀', v, '', '']);
+  const posRows  = [...posSet].sort().map(v => ['직책', v, '', '']);
+  const rows = [...teamRows, ...posRows];
 
   if (rows.length > 0) {
     mapSheet.getRange(2, 1, rows.length, 4).setValues(rows);
-    // 표준 카테고리 열 노란색 강조 (사용자 입력 구간)
+    // 표준 카테고리 열 노란색 강조
     mapSheet.getRange(2, 3, rows.length, 1).setBackground('#fff9c4');
+
+    // 팀 드롭다운 — 추출된 팀 고유값 목록으로 구성 (회사마다 동적 생성)
+    if (teamRows.length > 0) {
+      const teamList = [...teamSet].sort();
+      const teamRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(teamList, true)
+        .setAllowInvalid(true)
+        .build();
+      mapSheet.getRange(2, 3, teamRows.length, 1).setDataValidation(teamRule);
+    }
+    // 직책 드롭다운 — 추출된 직책 고유값 목록으로 구성 (회사마다 동적 생성)
+    if (posRows.length > 0) {
+      const posList = [...posSet].sort();
+      const posRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(posList, true)
+        .setAllowInvalid(true)
+        .build();
+      mapSheet.getRange(2 + teamRows.length, 3, posRows.length, 1).setDataValidation(posRule);
+    }
   }
 
   mapSheet.activate();
