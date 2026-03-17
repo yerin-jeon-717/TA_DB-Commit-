@@ -449,19 +449,25 @@ function mergeLinkedinIntoRemember() {
 }
 
 // ==========================================
-// ■ [v20.2] 팀/직책 카테고리 매핑 — STEP 1: 고유값 추출
-// 현재 시트의 F열(팀), G열(직책) 고유값을 카테고리 매핑 시트에 나열.
-// 사용자가 '표준 카테고리' 열을 채운 뒤 applyCategoryMapping 실행.
+// ■ [v20.5] 팀/직책 카테고리 매핑 — STEP 1: 고유값 추출
+// 선택된 회사의 통합 시트(Remember) F열(팀), G열(직책) 고유값을 매핑 시트에 나열.
+// 키워드 자동 추천값 사전 입력 + 드롭다운 선택으로 표준 카테고리 확정.
 // ==========================================
 function buildCategoryMappingReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = SpreadsheetApp.getActiveSheet();
-  const tMap = getColMap(sheet);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return SpreadsheetApp.getUi().alert('데이터가 없습니다.');
+  const ui = SpreadsheetApp.getUi();
+  const cfg = getOrSelectCompany(); if (!cfg) return;
 
-  const teamIdx = tMap["팀"]  + 1; // F열 (1-based)
-  const posIdx  = tMap["직책"] + 1; // G열
+  const sheet = ss.getSheetByName(cfg.sheet1Name);
+  if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
+
+  const tMap = getColMap(sheet);
+  if (tMap["팀"] === undefined || tMap["직책"] === undefined) {
+    return ui.alert(`❌ '${cfg.sheet1Name}' 시트에 '팀' 또는 '직책' 컬럼이 없습니다.\n먼저 데이터 가져오기를 실행하세요.`);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return ui.alert('데이터가 없습니다.');
 
   const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
 
@@ -471,6 +477,10 @@ function buildCategoryMappingReport() {
     const t = String(row[tMap["팀"]]  || '').trim(); if (t) teamSet.add(t);
     const p = String(row[tMap["직책"]] || '').trim(); if (p) posSet.add(p);
   });
+
+  if (teamSet.size === 0 && posSet.size === 0) {
+    return ui.alert(`'${cfg.sheet1Name}' 시트의 팀·직책 열이 비어 있습니다.`);
+  }
 
   // 매핑 시트 작성
   let mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
@@ -516,12 +526,14 @@ function buildCategoryMappingReport() {
 }
 
 // ==========================================
-// ■ [v20.2] 팀/직책 카테고리 매핑 — STEP 2: 매핑 적용
-// 카테고리 매핑 시트를 참조하여 현재 시트 F·G열을 일괄 업데이트.
+// ■ [v20.5] 팀/직책 카테고리 매핑 — STEP 2: 매핑 적용
+// 카테고리 매핑 시트를 참조하여 선택된 회사 Remember 시트 F·G열을 일괄 업데이트.
 // 표준 카테고리가 비어 있는 값은 원본 유지.
 // ==========================================
 function applyCategoryMapping() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const cfg = getOrSelectCompany(); if (!cfg) return;
+
   const mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
   if (!mapSheet) return ui.alert(`❌ '${SHEET_CATEGORY_MAP}' 시트가 없습니다. 먼저 고유값 추출을 실행하세요.`);
 
@@ -538,7 +550,9 @@ function applyCategoryMapping() {
     if (type === '직책') posMap[original]  = standard;
   });
 
-  const sheet = SpreadsheetApp.getActiveSheet();
+  const sheet = ss.getSheetByName(cfg.sheet1Name);
+  if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
+
   const tMap  = getColMap(sheet);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return ui.alert('데이터가 없습니다.');
