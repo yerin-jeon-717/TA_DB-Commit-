@@ -12,6 +12,7 @@
  * 9. [GUARD v20.3] mergeLinkedinIntoRemember: 중복 리포트 미처리 시 경고 팝업 추가
  * 10. [UX v20.4] buildCategoryMappingReport: 표준 카테고리 열에 팀/직책 분리 드롭다운 추가
  * 11. [REFACTOR v20.6] buildCategoryMappingReport: CATEGORY_RULES/autoDetectCategory 제거, 팀/직책 병렬 6열 레이아웃으로 변경
+ * 12. [FIX v20.6] importLinkedInData/importRememberData: 타임스탬프 기반 새 시트 생성, 기존 시트 덮어쓰기 방지
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -579,10 +580,11 @@ function importLinkedInData() {
     const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
     const sourceData = selectedSheet.getDataRange().getValues().slice(1);
     const sourceRichTexts = selectedSheet.getRange(2, 10, sourceData.length, 1).getRichTextValues();
-    // 회사 설정의 sheet2Name(linkedin 시트)으로 자동 생성/덮어쓰기
-    let targetSheet = ss.getSheetByName(cfg.sheet2Name);
-    if (!targetSheet) targetSheet = ss.insertSheet(cfg.sheet2Name);
-    targetSheet.clear();
+    // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
+    const ts2 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+    const newSheet2Name = `${COMPANY_CONFIG[cfg.name].sheet2Name}_${ts2}`;
+    const targetSheet = ss.insertSheet(newSheet2Name);
+    PropertiesService.getScriptProperties().setProperty(`sheet2Name_${cfg.name}`, newSheet2Name);
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
     const results = sourceData.map(row => [selectedSheet.getName(), row[0], "", "linkedin", "", "", row[1], "", row[2], row[4], row[3], row[10]]);
     if (results.length > 0) {
@@ -611,10 +613,11 @@ function importRememberData() {
     const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
     const sourceData = selectedSheet.getDataRange().getValues().slice(1);
     const sourceRichTexts = selectedSheet.getRange(2, 2, sourceData.length, 1).getRichTextValues();
-    // 회사 설정의 sheet1Name(Remember 시트)으로 자동 생성/덮어쓰기
-    let targetSheet = ss.getSheetByName(cfg.sheet1Name);
-    if (!targetSheet) targetSheet = ss.insertSheet(cfg.sheet1Name);
-    targetSheet.clear();
+    // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
+    const ts1 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+    const newSheet1Name = `${COMPANY_CONFIG[cfg.name].sheet1Name}_${ts1}`;
+    const targetSheet = ss.insertSheet(newSheet1Name);
+    PropertiesService.getScriptProperties().setProperty(`sheet1Name_${cfg.name}`, newSheet1Name);
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
     const results = sourceData.map(row => [selectedSheet.getName(), row[0], "link", "", "", row[2], row[3], "", row[4], row[5], row[6], row[7]]);
     if (results.length > 0) {
@@ -785,7 +788,13 @@ function getOrSelectCompany() {
     saved = cos[parseInt(res.getResponseText()) - 1];
     props.setProperty('selectedCompany', saved);
   }
-  return { name: saved, ...COMPANY_CONFIG[saved] };
+  const cfg = { name: saved, ...COMPANY_CONFIG[saved] };
+  // 최근 import로 생성된 동적 시트명이 있으면 오버라이드 (타임스탬프 시트 반영)
+  const dynSheet1 = props.getProperty(`sheet1Name_${saved}`);
+  const dynSheet2 = props.getProperty(`sheet2Name_${saved}`);
+  if (dynSheet1) cfg.sheet1Name = dynSheet1;
+  if (dynSheet2) cfg.sheet2Name = dynSheet2;
+  return cfg;
 }
 
 
