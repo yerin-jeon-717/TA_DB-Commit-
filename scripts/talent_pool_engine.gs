@@ -1,10 +1,11 @@
 /**
- * [v20.0] 인재풀 엔진 - 중복 탐지 Gate 방식 재설계
+ * [v20.1] 인재풀 엔진 - 중복 탐지 Gate 방식 + 리포트 프로필 링크 추가
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리 (기존: - 만 처리)
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입 (불일치 즉시 제외)
  * 3. [UX] 리포트에 체크박스 + 처리구분(자동병합/검토필요) + 입사년월 컬럼 추가
- * 4. [FIX] applyDuplicateSelections: 새 리포트 컬럼 인덱스 반영
+ * 4. [UX] 리포트에 리멤버/링크드인 프로필 링크 컬럼 추가 (클릭 바로 이동)
+ * 5. [FIX] applyDuplicateSelections: 새 리포트 컬럼 인덱스 반영 (s2행: [8]→[10])
  */
 
 const COMPANY_CONFIG = {
@@ -28,7 +29,7 @@ const SHEET_DUP_REPORT = "🔍 중복_대조_리포트";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.0')
+  ui.createMenu('🚀 인재풀 엔진 v20.1')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -141,7 +142,11 @@ function isExcludedCompany(text) {
 }
 
 // ==========================================
-// ■ [v20.0] 중복 대조 — Gate 방식 재설계
+// ■ [v20.1] 중복 대조 — Gate 방식 + 링크 컬럼 추가
+// 리포트 컬럼 레이아웃 (16열):
+// [0]선택 [1]처리 [2]입사년월 [3]일치항목
+// [4]s1행 [5]s1이름 [6]s1리멤버링크 [7]s1링크드인링크 [8]s1경력 [9]s1학력
+// [10]s2행 [11]s2이름 [12]s2리멤버링크 [13]s2링크드인링크 [14]s2경력 [15]s2학력
 // ==========================================
 function runDuplicateScan() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
@@ -154,18 +159,34 @@ function runDuplicateScan() {
   let idx1, idx2;
   try {
     idx1 = {
-      name:      getColIndex(h1, '이름',      cfg.sheet1Name),
-      company:   getColIndex(h1, '이전 경력', cfg.sheet1Name),
-      period:    getColIndex(h1, '재직 기간', cfg.sheet1Name),
-      education: getColIndex(h1, '학력',      cfg.sheet1Name)
+      name:      getColIndex(h1, '이름',        cfg.sheet1Name),
+      company:   getColIndex(h1, '이전 경력',   cfg.sheet1Name),
+      period:    getColIndex(h1, '재직 기간',   cfg.sheet1Name),
+      education: getColIndex(h1, '학력',        cfg.sheet1Name),
+      remember:  getColIndex(h1, '리멤버 페이지', cfg.sheet1Name),
+      linkedin:  getColIndex(h1, '링크드인 페이지', cfg.sheet1Name)
     };
     idx2 = {
-      name:      getColIndex(h2, '이름',      cfg.sheet2Name),
-      company:   getColIndex(h2, '이전 경력', cfg.sheet2Name),
-      period:    getColIndex(h2, '재직 기간', cfg.sheet2Name),
-      education: getColIndex(h2, '학력',      cfg.sheet2Name)
+      name:      getColIndex(h2, '이름',        cfg.sheet2Name),
+      company:   getColIndex(h2, '이전 경력',   cfg.sheet2Name),
+      period:    getColIndex(h2, '재직 기간',   cfg.sheet2Name),
+      education: getColIndex(h2, '학력',        cfg.sheet2Name),
+      remember:  getColIndex(h2, '리멤버 페이지', cfg.sheet2Name),
+      linkedin:  getColIndex(h2, '링크드인 페이지', cfg.sheet2Name)
     };
   } catch (e) { return ui.alert('❌ ' + e.message); }
+
+  // 프로필 링크 RichText 전체 읽기 (C열=리멤버, D열=링크드인, 1-based 3·4)
+  const lastRow1 = data1.length - 1, lastRow2 = data2.length - 1;
+  const rt1C = lastRow1 > 0 ? sheet1.getRange(2, idx1.remember + 1, lastRow1, 1).getRichTextValues() : [];
+  const rt1D = lastRow1 > 0 ? sheet1.getRange(2, idx1.linkedin + 1, lastRow1, 1).getRichTextValues() : [];
+  const rt2C = lastRow2 > 0 ? sheet2.getRange(2, idx2.remember + 1, lastRow2, 1).getRichTextValues() : [];
+  const rt2D = lastRow2 > 0 ? sheet2.getRange(2, idx2.linkedin + 1, lastRow2, 1).getRichTextValues() : [];
+
+  const getUrl = (rtArr, rowIdx) => {
+    const rt = rtArr[rowIdx] && rtArr[rowIdx][0];
+    return rt ? (rt.getLinkUrl() || '') : '';
+  };
 
   const duplicates = [];
 
@@ -182,27 +203,31 @@ function runDuplicateScan() {
 
       // ── [보조 조건] 성씨 / 이전 경력 / 학력 ──
       const secondary = [
-        { label: '성(姓) 일치',   match: compareSurname(r[idx1.name], l[idx2.name]) },
+        { label: '성(姓) 일치',    match: compareSurname(r[idx1.name], l[idx2.name]) },
         { label: '이전 경력 유사', match: comparePreviousCompanies(r[idx1.company], l[idx2.company]) },
-        { label: '학력 유사',     match: compareEducation(r[idx1.education], l[idx2.education]) }
+        { label: '학력 유사',      match: compareEducation(r[idx1.education], l[idx2.education]) }
       ];
       const matched = secondary.filter(c => c.match);
-      if (matched.length === 0) continue; // 보조 조건 0개 → 제외
+      if (matched.length === 0) continue;
 
       const autoMerge = matched.length >= 2;
-      duplicates.push({ autoMerge, matched, joinDate: joinDate1, rRow: i + 1, lRow: j + 1, r, l, idx1, idx2 });
+      duplicates.push({
+        autoMerge, matched, joinDate: joinDate1,
+        rRow: i + 1, lRow: j + 1, r, l, idx1, idx2,
+        rememberUrl1: getUrl(rt1C, i - 1), linkedinUrl1: getUrl(rt1D, i - 1),
+        rememberUrl2: getUrl(rt2C, j - 1), linkedinUrl2: getUrl(rt2D, j - 1)
+      });
     }
   }
 
   // ── 리포트 작성 ──
-  // 컬럼 레이아웃: [선택(체크박스)] [처리] [입사년월] [일치항목] [s1 행] [s1 이름] [s1 경력] [s1 학력] [s2 행] [s2 이름] [s2 경력] [s2 학력]
   let report = ss.getSheetByName(SHEET_DUP_REPORT) || ss.insertSheet(SHEET_DUP_REPORT);
   report.clear();
 
   const headers = [
     '선택', '처리', '입사년월', '일치항목',
-    `[${cfg.sheet1Name}] 행`, `[${cfg.sheet1Name}] 이름`, `[${cfg.sheet1Name}] 경력`, `[${cfg.sheet1Name}] 학력`,
-    `[${cfg.sheet2Name}] 행`, `[${cfg.sheet2Name}] 이름`, `[${cfg.sheet2Name}] 경력`, `[${cfg.sheet2Name}] 학력`
+    `[${cfg.sheet1Name}] 행`, `[${cfg.sheet1Name}] 이름`, `[${cfg.sheet1Name}] 리멤버`, `[${cfg.sheet1Name}] 링크드인`, `[${cfg.sheet1Name}] 경력`, `[${cfg.sheet1Name}] 학력`,
+    `[${cfg.sheet2Name}] 행`, `[${cfg.sheet2Name}] 이름`, `[${cfg.sheet2Name}] 리멤버`, `[${cfg.sheet2Name}] 링크드인`, `[${cfg.sheet2Name}] 경력`, `[${cfg.sheet2Name}] 학력`
   ];
   report.appendRow(headers);
   report.getRange(1, 1, 1, headers.length).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
@@ -210,15 +235,29 @@ function runDuplicateScan() {
   if (duplicates.length > 0) {
     duplicates.sort((a, b) => b.matched.length - a.matched.length);
 
+    // 링크 제외 텍스트 값 먼저 세팅
     const reportValues = duplicates.map(d => [
-      false, // 체크박스 placeholder
+      false,
       d.autoMerge ? '✅ 자동 병합' : '🔍 검토 필요',
       d.joinDate,
       d.matched.map(c => c.label).join(' · '),
-      d.rRow, String(d.r[d.idx1.name]), extractPrevCompanySummary(d.r[d.idx1.company]), extractSchoolSummary(d.r[d.idx1.education]),
-      d.lRow, String(d.l[d.idx2.name]), extractPrevCompanySummary(d.l[d.idx2.company]), extractSchoolSummary(d.l[d.idx2.education])
+      d.rRow, String(d.r[d.idx1.name]), '', '', extractPrevCompanySummary(d.r[d.idx1.company]), extractSchoolSummary(d.r[d.idx1.education]),
+      d.lRow, String(d.l[d.idx2.name]), '', '', extractPrevCompanySummary(d.l[d.idx2.company]), extractSchoolSummary(d.l[d.idx2.education])
     ]);
     report.getRange(2, 1, reportValues.length, headers.length).setValues(reportValues);
+
+    // 링크 컬럼에 RichText 하이퍼링크 삽입 (col 7=s1리멤버, 8=s1링크드인, 13=s2리멤버, 14=s2링크드인)
+    const buildLink = (text, url) =>
+      url ? SpreadsheetApp.newRichTextValue().setText(text).setLinkUrl(url).build()
+          : SpreadsheetApp.newRichTextValue().setText('-').build();
+
+    duplicates.forEach((d, i) => {
+      const row = i + 2;
+      report.getRange(row, 7).setRichTextValue(buildLink('리멤버', d.rememberUrl1));
+      report.getRange(row, 8).setRichTextValue(buildLink('linkedin', d.linkedinUrl1));
+      report.getRange(row, 13).setRichTextValue(buildLink('리멤버', d.rememberUrl2));
+      report.getRange(row, 14).setRichTextValue(buildLink('linkedin', d.linkedinUrl2));
+    });
 
     // 체크박스 삽입 + 자동 병합 행 사전 체크
     const checkboxRange = report.getRange(2, 1, reportValues.length, 1);
@@ -240,8 +279,10 @@ function runDuplicateScan() {
 }
 
 // ==========================================
-// ■ [v20.0] 병합 실행 — 새 리포트 컬럼 인덱스 반영
-// 리포트 컬럼: [0]선택 [1]처리 [2]입사년월 [3]일치항목 [4]s1행 [5]s1이름 [6]s1경력 [7]s1학력 [8]s2행 ...
+// ■ [v20.1] 병합 실행 — 새 리포트 컬럼 인덱스 반영
+// 리포트 컬럼: [0]선택 [1]처리 [2]입사년월 [3]일치항목
+//             [4]s1행 [5]s1이름 [6]s1리멤버 [7]s1링크드인 [8]s1경력 [9]s1학력
+//             [10]s2행 [11]s2이름 [12]s2리멤버 [13]s2링크드인 [14]s2경력 [15]s2학력
 // ==========================================
 function applyDuplicateSelections() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -259,8 +300,8 @@ function applyDuplicateSelections() {
   for (let i = 1; i < rData.length; i++) {
     if (rData[i][0] !== true) continue; // 체크박스 선택된 행만
 
-    const aIdx = rData[i][4]; // [4] = sheet1 행 번호
-    const bIdx = rData[i][8]; // [8] = sheet2 행 번호
+    const aIdx = rData[i][4];  // [4] = sheet1 행 번호
+    const bIdx = rData[i][10]; // [10] = sheet2 행 번호
 
     // sheet2의 LinkedIn URL → sheet1에 이식
     const bRichText = newSheet.getRange(bIdx, liColIdx).getRichTextValue();

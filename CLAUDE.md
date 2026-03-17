@@ -194,7 +194,7 @@ function extractCompaniesFromCareer(text) {
 ---
 
 ## Known Issues & TODO
-- [ ] **[최우선]** 중복 탐지 재설계 — Gate 방식 구현 + `extractNonAprCompanies` 정규식 수정
+- [x] 중복 탐지 재설계 — Gate 방식 구현 + `extractNonAprCompanies` 정규식 수정 (`scripts/talent_pool_engine.gs` v20.0)
 - [ ] 기업명 마스터 매핑 테이블 구축 (15개사 + 업계 주요사)
 - [ ] 통합 시트 스키마 기준 데이터 정합성 검증 자동화
 - [ ] 웹 검색 엔진 스택 결정 및 구현 (Vercel)
