@@ -1,5 +1,5 @@
 /**
- * [v20.3] 인재풀 엔진
+ * [v20.5] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -69,7 +69,7 @@ const CATEGORY_RULES = {
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.2')
+  ui.createMenu('🚀 인재풀 엔진 v20.5')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -85,8 +85,8 @@ function onOpen() {
       .addItem('🔀 링크드인 잔여 데이터 → 리멤버 시트에 합치기', 'mergeLinkedinIntoRemember'))
     .addSeparator()
     .addSubMenu(ui.createMenu('🏷️ 3. 팀/직책 카테고리 정규화')
-      .addItem('📋 카테고리 매핑 시트 생성 (고유값 추출)', 'buildCategoryMappingReport')
-      .addItem('✅ 카테고리 매핑 적용 (현재 시트)', 'applyCategoryMapping'))
+      .addItem('📋 카테고리 매핑 시트 생성 (선택 회사 기준)', 'buildCategoryMappingReport')
+      .addItem('✅ 카테고리 매핑 적용 (선택 회사 시트)', 'applyCategoryMapping'))
     .addSeparator()
     .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
     .addItem('⚪ 리포트 서식 초기화', 'clearAllColors')

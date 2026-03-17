@@ -161,21 +161,27 @@ function extractCompaniesFromCareer(text) {
 
 ---
 
-## GAS Architecture (v20.3)
-| 함수 | 역할 |
-|------|------|
-| `importLinkedInData()` | 링크드인 raw → 통합 시트 가져오기, RichText URL 이식 |
-| `importRememberData()` | 리멤버 raw → 통합 시트 가져오기, RichText URL 이식 |
-| `translateNameColumn()` | 영문명 → 국문 번역 병기 |
-| `unifyFormatLinkedinToRemember()` | 재직기간/이전경력 포맷 정규화 (역산 포함) |
-| `updateCurrentSheetCareer()` | 총 경력 합산 계산 |
-| `runDuplicateScan()` | 중복 대조 리포트 생성 (Gate 방식) |
-| `applyDuplicateSelections()` | 선택 중복 병합 실행 (LinkedIn URL 이식 후 삭제) |
-| `mergeLinkedinIntoRemember()` | 링크드인 잔여 데이터 → 리멤버 시트 append + 링크드인 시트 숨김 |
-| `buildCategoryMappingReport()` | F/G열 고유값 추출 → 카테고리 매핑 시트 생성 |
-| `applyCategoryMapping()` | 매핑 시트 기반 F/G열 일괄 업데이트 |
-| `runRegionMapping()` | Region 자동 태깅 |
-| `getOrSelectCompany()` | 현재 작업 대상 회사 선택/캐시 (ScriptProperties) |
+## GAS Architecture (v20.5)
+
+### 함수 목록
+| 함수 | 적용 대상 | 역할 |
+|------|----------|------|
+| `importLinkedInData()` | **현재 활성 시트** | 링크드인 raw → 통합 시트 가져오기, RichText URL 이식 |
+| `importRememberData()` | **현재 활성 시트** | 리멤버 raw → 통합 시트 가져오기, RichText URL 이식 |
+| `translateNameColumn()` | **현재 활성 시트** | 영문명 → 국문 번역 병기 |
+| `unifyFormatLinkedinToRemember()` | **현재 활성 시트** | 재직기간/이전경력 포맷 정규화 (역산 포함) |
+| `updateCurrentSheetCareer()` | **현재 활성 시트** | 총 경력 합산 계산 |
+| `runDuplicateScan()` | **회사 선택** | 중복 대조 리포트 생성 (Gate 방식) |
+| `applyDuplicateSelections()` | **회사 선택** | 선택 중복 병합 실행 (LinkedIn URL 이식 후 삭제) |
+| `mergeLinkedinIntoRemember()` | **회사 선택** | 링크드인 잔여 데이터 → 리멤버 시트 append + 링크드인 시트 숨김 |
+| `buildCategoryMappingReport()` | **회사 선택** → Remember 시트 | F/G열 고유값 추출 + 키워드 자동 추천 → 매핑 시트 생성 |
+| `applyCategoryMapping()` | **회사 선택** → Remember 시트 | 매핑 시트 기반 F/G열 일괄 업데이트 |
+| `autoDetectCategory()` | 내부 헬퍼 | CATEGORY_RULES 기반 팀/직책 키워드 자동 탐지 |
+| `runRegionMapping()` | **현재 활성 시트** | Region 자동 태깅 |
+| `getOrSelectCompany()` | 공통 | 현재 작업 대상 회사 선택/캐시 (ScriptProperties) |
+
+> **주의**: "현재 활성 시트" 함수는 반드시 작업할 시트를 직접 클릭하여 활성화한 뒤 실행.
+> "회사 선택" 함수는 실행 시 회사 선택 팝업이 자동으로 뜸.
 
 ---
 
@@ -226,6 +232,8 @@ function extractCompaniesFromCareer(text) {
 3. **Zero-Padding** — 기간 출력은 항상 `"0년 4개월"` 형식 (정렬 무결성)
 4. **Format-first** — 중복 탐지 실행 전 반드시 포맷 정화 선행
 5. **Gate-first Dedup** — 입사년월 불일치 시 다른 조건 확인 없이 즉시 제외
+6. **Company-scoped** — 중복처리·카테고리 매핑 함수는 `getOrSelectCompany()` 기반으로 동작. `getActiveSheet()` 사용 금지
+7. **Version Sync** — 코드 수정 시 파일 상단 버전 태그(`[vX.X]`)와 `onOpen` 메뉴 타이틀을 동시에 업데이트
 
 ---
 
