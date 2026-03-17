@@ -587,6 +587,7 @@ function importLinkedInData() {
   const ui = SpreadsheetApp.getUi();
   try {
     const cfg = getOrSelectCompany(); if (!cfg) return;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sourceSs = SpreadsheetApp.openById(cfg.linkedinSourceId);
     const dataSheets = sourceSs.getSheets().slice(4);
     const sheetList = dataSheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
@@ -595,7 +596,9 @@ function importLinkedInData() {
     const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
     const sourceData = selectedSheet.getDataRange().getValues().slice(1);
     const sourceRichTexts = selectedSheet.getRange(2, 10, sourceData.length, 1).getRichTextValues();
-    const targetSheet = SpreadsheetApp.getActiveSheet();
+    // 회사 설정의 sheet2Name(linkedin 시트)으로 자동 생성/덮어쓰기
+    let targetSheet = ss.getSheetByName(cfg.sheet2Name);
+    if (!targetSheet) targetSheet = ss.insertSheet(cfg.sheet2Name);
     targetSheet.clear();
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
     const results = sourceData.map(row => [selectedSheet.getName(), row[0], "", "linkedin", "", "", row[1], "", row[2], row[4], row[3], row[10]]);
@@ -616,6 +619,7 @@ function importRememberData() {
   const ui = SpreadsheetApp.getUi();
   try {
     const cfg = getOrSelectCompany(); if (!cfg) return;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sourceSs = SpreadsheetApp.openById(cfg.rememberSourceId);
     const dataSheets = sourceSs.getSheets().slice(4);
     const sheetList = dataSheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
@@ -624,7 +628,9 @@ function importRememberData() {
     const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
     const sourceData = selectedSheet.getDataRange().getValues().slice(1);
     const sourceRichTexts = selectedSheet.getRange(2, 2, sourceData.length, 1).getRichTextValues();
-    const targetSheet = SpreadsheetApp.getActiveSheet();
+    // 회사 설정의 sheet1Name(Remember 시트)으로 자동 생성/덮어쓰기
+    let targetSheet = ss.getSheetByName(cfg.sheet1Name);
+    if (!targetSheet) targetSheet = ss.insertSheet(cfg.sheet1Name);
     targetSheet.clear();
     targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
     const results = sourceData.map(row => [selectedSheet.getName(), row[0], "link", "", "", row[2], row[3], "", row[4], row[5], row[6], row[7]]);
@@ -679,10 +685,12 @@ function runRegionMapping() {
     const combined = (String(row[tMap["팀"]] || "") + " " + String(row[tMap["직책"]] || "")).toLowerCase();
     const matched = [];
     const rules = [
-      { region: "북미",   keywords: ["북미", "US", "미국", "America", "North America", "틱톡샵"] },
-      { region: "일본",   keywords: ["일본", "Japan", "JP", "일본사업", "일본 GTM"] },
-      { region: "한국",   keywords: ["한국", "Korea", "KR", "국내", "한국사업"] },
-      { region: "글로벌", keywords: ["글로벌", "Global", "해외", "동남아", "유럽"] }
+      { region: "북미",      keywords: ["북미", "us", "미국", "america", "north america", "틱톡샵", "u.s"] },
+      { region: "일본",      keywords: ["일본", "japan", "jp", "일본사업", "일본 gtm"] },
+      { region: "한국",      keywords: ["한국", "korea", "kr", "국내", "한국사업"] },
+      { region: "동남아",    keywords: ["동남아", "동남아시아", "sea", "southeast asia"] },
+      { region: "중국/대만", keywords: ["중국", "china", "홍콩", "대만", "taiwan", "hong kong"] },
+      { region: "글로벌",    keywords: ["글로벌", "global", "해외", "유럽"] }
     ];
     rules.forEach(rule => { if (rule.keywords.some(kw => combined.includes(kw.toLowerCase()))) matched.push(rule.region); });
     if (matched.length === 0) return ["NA"];
