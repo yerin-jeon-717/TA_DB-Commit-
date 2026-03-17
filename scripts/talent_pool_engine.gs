@@ -11,6 +11,7 @@
  * 8. [BUG FIX v20.3] applyDuplicateSelections: D열 링크드인 URL 이식 — getLinkUrl() null 시 텍스트 fallback 추가
  * 9. [GUARD v20.3] mergeLinkedinIntoRemember: 중복 리포트 미처리 시 경고 팝업 추가
  * 10. [UX v20.4] buildCategoryMappingReport: 표준 카테고리 열에 팀/직책 분리 드롭다운 추가
+ * 11. [UX v20.5] buildCategoryMappingReport: 키워드 기반 자동 추천값 C열 사전 입력 + 대분류 드롭다운 전환
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -37,6 +38,34 @@ const COMPANY_CONFIG = {
 
 const SHEET_DUP_REPORT    = "🔍 중복_대조_리포트";
 const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
+
+// ── 직무 대분류 키워드 규칙 (팀/직책 자동 추천) ──
+const CATEGORY_RULES = {
+  팀: [
+    { label: '마케팅',       keywords: ['마케팅', 'marketing', 'brand', '브랜드', '퍼포먼스', 'performance', 'sns', '콘텐츠', 'content', 'crm', 'growth'] },
+    { label: '이커머스',     keywords: ['이커머스', 'ecommerce', 'e-commerce', 'd2c', '온라인', '쿠팡', '네이버', '스토어'] },
+    { label: '글로벌/해외',  keywords: ['글로벌', 'global', '해외', '북미', '일본', '동남아', '중국', '유럽', 'gtm', 'international'] },
+    { label: '영업/세일즈',  keywords: ['영업', 'sales', '세일즈', '유통', '오프라인', 'b2b', '거래처'] },
+    { label: '제품개발/R&D', keywords: ['r&d', '연구', '포뮬라', '원료', '기술연구', '연구소', '품질', 'rd'] },
+    { label: '디자인',       keywords: ['디자인', 'design', 'ux', 'ui', '패키지', 'bx', '크리에이티브', 'creative', '그래픽'] },
+    { label: 'IT/개발',      keywords: ['it', 'engineer', 'dev', '시스템', '플랫폼', '백엔드', '프론트', 'devops', 'infra', '인프라'] },
+    { label: '데이터/분석',  keywords: ['데이터', 'data', '분석', 'analytics', 'bi', 'insight'] },
+    { label: '운영/SCM',     keywords: ['운영', 'scm', '물류', '공급망', '생산', 'operation', '오퍼레이션', '재고', '배송'] },
+    { label: 'CS/고객서비스',keywords: ['cs', '고객', 'customer', '서비스', '상담'] },
+    { label: '경영지원',     keywords: ['hr', '인사', '재무', '법무', '회계', '총무', '경영지원', 'finance', 'legal'] },
+    { label: '전략/기획',    keywords: ['전략', '기획', 'strategy', 'planning', '사업기획', '경영기획'] },
+  ],
+  직책: [
+    { label: '인턴',       keywords: ['인턴', 'intern'] },
+    { label: '사원/주임',  keywords: ['사원', '주임', 'junior', 'associate', 'assistant', 'staff', '스태프'] },
+    { label: '대리',       keywords: ['대리'] },
+    { label: '과장',       keywords: ['과장', 'manager', '매니저'] },
+    { label: '차장',       keywords: ['차장', 'senior manager', 'lead', '리드', 'senior'] },
+    { label: '부장/팀장',  keywords: ['부장', '팀장', '실장', 'director', 'head', '헤드', 'principal'] },
+    { label: '임원',       keywords: ['이사', '상무', '전무', 'vp', 'vice president', 'executive', 'svp'] },
+    { label: 'C레벨/대표', keywords: ['대표', 'ceo', 'cto', 'cmo', 'cfo', 'coo', 'cpo', 'chief'] },
+  ]
+};
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
@@ -452,31 +481,29 @@ function buildCategoryMappingReport() {
   mapSheet.appendRow(headers);
   mapSheet.getRange(1, 1, 1, 4).setBackground('#34a853').setFontColor('#ffffff').setFontWeight('bold');
 
-  const teamRows = [...teamSet].sort().map(v => ['팀', v, '', '']);
-  const posRows  = [...posSet].sort().map(v => ['직책', v, '', '']);
+  // 자동 추천값 포함한 행 생성
+  const teamRows = [...teamSet].sort().map(v => ['팀',   v, autoDetectCategory(v, '팀'),   '']);
+  const posRows  = [...posSet].sort().map(v =>  ['직책', v, autoDetectCategory(v, '직책'), '']);
   const rows = [...teamRows, ...posRows];
 
   if (rows.length > 0) {
     mapSheet.getRange(2, 1, rows.length, 4).setValues(rows);
-    // 표준 카테고리 열 노란색 강조
-    mapSheet.getRange(2, 3, rows.length, 1).setBackground('#fff9c4');
 
-    // 팀 드롭다운 — 추출된 팀 고유값 목록으로 구성 (회사마다 동적 생성)
+    // 색상: 자동추천 있음 → 연초록, 없음 → 노란색
+    rows.forEach((row, i) => {
+      mapSheet.getRange(i + 2, 3).setBackground(row[2] ? '#e6f4ea' : '#fff9c4');
+    });
+
+    // 팀 드롭다운 — 시트 추출 고유값 (조직 내 실제 용어 기준)
     if (teamRows.length > 0) {
-      const teamList = [...teamSet].sort();
       const teamRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(teamList, true)
-        .setAllowInvalid(true)
-        .build();
+        .requireValueInList([...teamSet].sort(), true).setAllowInvalid(true).build();
       mapSheet.getRange(2, 3, teamRows.length, 1).setDataValidation(teamRule);
     }
-    // 직책 드롭다운 — 추출된 직책 고유값 목록으로 구성 (회사마다 동적 생성)
+    // 직책 드롭다운 — 시트 추출 고유값 (조직 내 실제 용어 기준)
     if (posRows.length > 0) {
-      const posList = [...posSet].sort();
       const posRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(posList, true)
-        .setAllowInvalid(true)
-        .build();
+        .requireValueInList([...posSet].sort(), true).setAllowInvalid(true).build();
       mapSheet.getRange(2 + teamRows.length, 3, posRows.length, 1).setDataValidation(posRule);
     }
   }
@@ -754,6 +781,19 @@ function getOrSelectCompany() {
     props.setProperty('selectedCompany', saved);
   }
   return { name: saved, ...COMPANY_CONFIG[saved] };
+}
+
+// ── 키워드 기반 카테고리 자동 추천 ──
+function autoDetectCategory(text, type) {
+  const rules = CATEGORY_RULES[type];
+  if (!rules || !text) return '';
+  const normalized = text.toLowerCase().replace(/[\s\-_·.]/g, '');
+  for (const rule of rules) {
+    if (rule.keywords.some(kw => normalized.includes(kw.replace(/[\s\-_·.]/g, '')))) {
+      return rule.label;
+    }
+  }
+  return '';
 }
 
 function clearAllColors() {
