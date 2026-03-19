@@ -1,5 +1,5 @@
 /**
- * [v20.8] 인재풀 엔진
+ * [v20.9] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -22,6 +22,9 @@
  * 19. [FIX v20.8] standardizeLineFinal: 이전 경력 info 구분자 ' - ' → ' | ' 변환
  * 20. [FIX v20.8] unifyFormatLinkedinToRemember: A열 회사명 기준 행별 키워드 파생 (getKeywordsForCompany)
  *     → COMPANY_CONFIG 등록 회사는 excludeKeywords 사용, 미등록 회사는 A열 값 자체를 키워드로
+ * 21. [REDESIGN v20.9] buildCategoryMappingReport: LinkedIn 출처 행(C열 없고 D열 있는 행)의 G열 직책 고유값 추출
+ *     → 기준 행(C열 있는 행)의 F/G 고유값을 드롭다운으로 제공하는 3열 레이아웃
+ * 22. [REDESIGN v20.9] applyCategoryMapping: LinkedIn 출처 행만 필터 → F열(팀)+G열(직책) 동시 업데이트
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -59,7 +62,7 @@ const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.8')
+  ui.createMenu('🚀 인재풀 엔진 v20.9')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -535,9 +538,12 @@ function mergeLinkedinIntoRemember() {
 }
 
 // ==========================================
-// ■ [v20.6] 팀/직책 카테고리 매핑 — STEP 1: 고유값 추출 (병렬 6열 레이아웃)
-// 선택된 회사의 통합 시트(Remember) F열(팀), G열(직책) 고유값을 매핑 시트에 나열.
-// A~C: 타입(팀)/팀 원본값/팀 표준 카테고리  |  D~F: 타입(직책)/직책 원본값/직책 표준 카테고리
+// ■ [v20.9] 팀/직책 카테고리 매핑 — STEP 1: LinkedIn 출처 직책 고유값 추출
+// - 소스: cfg.sheet1Name (통합 Remember 시트, mergeLinkedinIntoRemember 실행 후)
+// - LinkedIn 출처 행: C열(리멤버 페이지) 비어있고 D열(링크드인 페이지) 있는 행
+// - 해당 행의 G열(직책) 고유값 → A열 (빈값은 '(빈값)'으로 포함)
+// - 기준 행(C열 있는 행)의 F/G 고유값 → B/C열 드롭다운 옵션
+// 매핑 리포트 3열: A(LinkedIn 직책 원본값) | B(→팀 표준값 드롭다운) | C(→직책 표준값 드롭다운)
 // ==========================================
 function buildCategoryMappingReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -548,8 +554,13 @@ function buildCategoryMappingReport() {
   if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
 
   const tMap = getColMap(sheet);
-  if (tMap["팀"] === undefined || tMap["직책"] === undefined) {
-    return ui.alert(`❌ '${cfg.sheet1Name}' 시트에 '팀' 또는 '직책' 컬럼이 없습니다.\n먼저 데이터 가져오기를 실행하세요.`);
+  const remColIdx  = tMap["리멤버 페이지"];   // 0-based
+  const liColIdx   = tMap["링크드인 페이지"]; // 0-based
+  const teamColIdx = tMap["팀"];              // 0-based
+  const posColIdx  = tMap["직책"];            // 0-based
+
+  if (remColIdx === undefined || liColIdx === undefined || teamColIdx === undefined || posColIdx === undefined) {
+    return ui.alert(`❌ 필수 컬럼(리멤버 페이지/링크드인 페이지/팀/직책)이 없습니다.`);
   }
 
   const lastRow = sheet.getLastRow();
@@ -557,123 +568,143 @@ function buildCategoryMappingReport() {
 
   const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
 
-  // 고유값 수집 (타입별 분리, 정렬)
-  const teamSet = new Set(), posSet = new Set();
-  data.forEach(row => {
-    const t = String(row[tMap["팀"]]  || '').trim(); if (t) teamSet.add(t);
-    const p = String(row[tMap["직책"]] || '').trim(); if (p) posSet.add(p);
+  // LinkedIn 출처 행: C열 비어있고 D열 있는 행
+  // 기준 행: C열 있는 행 (리멤버 원본 + 중복 병합 행)
+  const liSourceRows = data.filter(row =>
+    String(row[remColIdx] || '').trim() === '' && String(row[liColIdx] || '').trim() !== ''
+  );
+  const baseRows = data.filter(row =>
+    String(row[remColIdx] || '').trim() !== ''
+  );
+
+  if (liSourceRows.length === 0) {
+    return ui.alert(
+      `LinkedIn 출처 행(C열 없고 D열 있는 행)이 없습니다.\n` +
+      `먼저 '링크드인 잔여 데이터 → 리멤버 시트에 합치기'를 실행하세요.`
+    );
+  }
+
+  // LinkedIn 출처 행의 G열(직책) 고유값 (빈값 포함 → '(빈값)')
+  const liPosSet = new Set();
+  liSourceRows.forEach(row => {
+    const p = String(row[posColIdx] || '').trim();
+    liPosSet.add(p === '' ? '(빈값)' : p);
   });
 
-  if (teamSet.size === 0 && posSet.size === 0) {
-    return ui.alert(`'${cfg.sheet1Name}' 시트의 팀·직책 열이 비어 있습니다.`);
-  }
+  // 기준 행의 F/G 고유값 (드롭다운 옵션)
+  const baseTeamSet = new Set(), basePosSet = new Set();
+  baseRows.forEach(row => {
+    const t = String(row[teamColIdx] || '').trim(); if (t) baseTeamSet.add(t);
+    const p = String(row[posColIdx]  || '').trim(); if (p) basePosSet.add(p);
+  });
 
   // 매핑 시트 작성
   let mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
   if (!mapSheet) mapSheet = ss.insertSheet(SHEET_CATEGORY_MAP);
   else mapSheet.clear();
 
-  // 6열 병렬 헤더: A~C (팀), D~F (직책)
-  const headers = ['타입', '팀 원본값', '팀 표준 카테고리', '타입', '직책 원본값', '직책 표준 카테고리'];
+  // 3열 헤더: A(LinkedIn 직책 원본값) | B(→팀 드롭다운) | C(→직책 표준값 드롭다운)
+  const headers = ['LinkedIn 직책 원본값', '→ 팀 (표준값)', '→ 직책 (표준값)'];
   mapSheet.appendRow(headers);
-  mapSheet.getRange(1, 1, 1, 3).setBackground('#34a853').setFontColor('#ffffff').setFontWeight('bold');
-  mapSheet.getRange(1, 4, 1, 3).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
+  mapSheet.getRange(1, 1, 1, 3).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
 
-  const teamArr = [...teamSet].sort();
-  const posArr  = [...posSet].sort();
-  const maxLen  = Math.max(teamArr.length, posArr.length);
+  const liPosArr = [...liPosSet].sort();
+  const rows = liPosArr.map(p => [p, '', '']);
+  mapSheet.getRange(2, 1, rows.length, 3).setValues(rows);
 
-  if (maxLen > 0) {
-    // 병렬 행 생성
-    const rows = Array.from({ length: maxLen }, (_, i) => [
-      i < teamArr.length ? '팀'   : '', teamArr[i] ?? '', '',
-      i < posArr.length  ? '직책' : '', posArr[i]  ?? '', ''
-    ]);
-    mapSheet.getRange(2, 1, rows.length, 6).setValues(rows);
+  // B·C열 노란 배경 (입력 대상)
+  mapSheet.getRange(2, 2, rows.length, 2).setBackground('#fff9c4');
 
-    // C열(팀 표준 카테고리) 노란 배경
-    if (teamArr.length > 0) {
-      mapSheet.getRange(2, 3, teamArr.length, 1).setBackground('#fff9c4');
-    }
-    // F열(직책 표준 카테고리) 노란 배경
-    if (posArr.length > 0) {
-      mapSheet.getRange(2, 6, posArr.length, 1).setBackground('#fff9c4');
-    }
+  // B열 드롭다운 — 기준 행의 팀 고유값
+  const teamArr = [...baseTeamSet].sort();
+  if (teamArr.length > 0) {
+    const teamRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(teamArr, true).setAllowInvalid(true).build();
+    mapSheet.getRange(2, 2, rows.length, 1).setDataValidation(teamRule);
+  }
 
-    // C열 드롭다운 — 팀 고유값 (조직 내 실제 용어 기준)
-    if (teamArr.length > 0) {
-      const teamRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(teamArr, true).setAllowInvalid(true).build();
-      mapSheet.getRange(2, 3, teamArr.length, 1).setDataValidation(teamRule);
-    }
-    // F열 드롭다운 — 직책 고유값 (조직 내 실제 용어 기준)
-    if (posArr.length > 0) {
-      const posRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(posArr, true).setAllowInvalid(true).build();
-      mapSheet.getRange(2, 6, posArr.length, 1).setDataValidation(posRule);
-    }
+  // C열 드롭다운 — 기준 행의 직책 고유값
+  const posArr = [...basePosSet].sort();
+  if (posArr.length > 0) {
+    const posRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(posArr, true).setAllowInvalid(true).build();
+    mapSheet.getRange(2, 3, rows.length, 1).setDataValidation(posRule);
   }
 
   mapSheet.activate();
   ui.alert(
-    `✅ 완료: 팀 ${teamSet.size}개, 직책 ${posSet.size}개 고유값을 추출했습니다.\n` +
-    `'${SHEET_CATEGORY_MAP}' 시트의 C열(팀 표준 카테고리)·F열(직책 표준 카테고리)을 채운 뒤 '카테고리 매핑 적용'을 실행하세요.`
+    `✅ 완료: LinkedIn 출처 직책 ${liPosSet.size}개 고유값을 추출했습니다.\n` +
+    `(기준 행 팀 ${baseTeamSet.size}개, 직책 ${basePosSet.size}개 드롭다운 세팅)\n\n` +
+    `'${SHEET_CATEGORY_MAP}' 시트의 B열(팀)·C열(직책)을 채운 뒤 '카테고리 매핑 적용'을 실행하세요.`
   );
 }
 
 // ==========================================
-// ■ [v20.5] 팀/직책 카테고리 매핑 — STEP 2: 매핑 적용
-// 카테고리 매핑 시트를 참조하여 선택된 회사 Remember 시트 F·G열을 일괄 업데이트.
-// 표준 카테고리가 비어 있는 값은 원본 유지.
+// ■ [v20.9] 팀/직책 카테고리 매핑 — STEP 2: LinkedIn 출처 행에만 매핑 적용
+// - 적용 대상: cfg.sheet1Name에서 C열(리멤버 페이지) 없고 D열(링크드인 페이지) 있는 행만
+// - G열(직책) 원본값으로 매핑 조회 → F열(팀) + G열(직책) 동시 업데이트
+// - 3열 레이아웃: A(LinkedIn 직책 원본값), B(→팀 표준값), C(→직책 표준값)
 // ==========================================
 function applyCategoryMapping() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
   const cfg = getOrSelectCompany(); if (!cfg) return;
 
   const mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
-  if (!mapSheet) return ui.alert(`❌ '${SHEET_CATEGORY_MAP}' 시트가 없습니다. 먼저 고유값 추출을 실행하세요.`);
+  if (!mapSheet) return ui.alert(`❌ '${SHEET_CATEGORY_MAP}' 시트가 없습니다. 먼저 매핑 시트 생성을 실행하세요.`);
 
   const mapData = mapSheet.getDataRange().getValues().slice(1); // 헤더 제외
 
-  // 팀·직책 매핑 테이블 생성 (6열 병렬 레이아웃: B=팀원본, C=팀표준, E=직책원본, F=직책표준)
+  // 3열 레이아웃: A(LinkedIn 직책 원본값), B(→팀 표준값), C(→직책 표준값)
   const teamMap = {}, posMap = {};
   mapData.forEach(row => {
-    const origTeam = String(row[1] || '').trim();
-    const stdTeam  = String(row[2] || '').trim();
-    const origPos  = String(row[4] || '').trim();
-    const stdPos   = String(row[5] || '').trim();
-    if (origTeam && stdTeam) teamMap[origTeam] = stdTeam;
-    if (origPos  && stdPos)  posMap[origPos]   = stdPos;
+    const origPos = String(row[0] || '').trim();
+    const stdTeam = String(row[1] || '').trim();
+    const stdPos  = String(row[2] || '').trim();
+    if (origPos === '(빈값)') {
+      // 빈 직책 행에 대한 매핑
+      if (stdTeam) teamMap[''] = stdTeam;
+      if (stdPos)  posMap['']  = stdPos;
+    } else if (origPos) {
+      if (stdTeam) teamMap[origPos] = stdTeam;
+      if (stdPos)  posMap[origPos]  = stdPos;
+    }
   });
 
   const sheet = ss.getSheetByName(cfg.sheet1Name);
   if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
 
-  const tMap  = getColMap(sheet);
+  const tMap = getColMap(sheet);
+  const remColIdx  = tMap["리멤버 페이지"];   // 0-based
+  const liColIdx   = tMap["링크드인 페이지"]; // 0-based
+  const teamColIdx = tMap["팀"]   + 1;         // 1-based
+  const posColIdx  = tMap["직책"] + 1;         // 1-based
+
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return ui.alert('데이터가 없습니다.');
-
-  const teamColIdx = tMap["팀"]  + 1; // F열 (1-based)
-  const posColIdx  = tMap["직책"] + 1; // G열
 
   const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   let updatedCount = 0;
 
   data.forEach((row, i) => {
+    // LinkedIn 출처 행만 처리: C열 비어있고 D열 있는 행
+    const remVal = String(row[remColIdx] || '').trim();
+    const liVal  = String(row[liColIdx]  || '').trim();
+    if (remVal !== '' || liVal === '') return;
+
     const rowNum = i + 2;
-    const origTeam = String(row[tMap["팀"]]  || '').trim();
-    const origPos  = String(row[tMap["직책"]] || '').trim();
-    if (origTeam && teamMap[origTeam]) {
-      sheet.getRange(rowNum, teamColIdx).setValue(teamMap[origTeam]);
+    const origPos = String(row[tMap["직책"]] || '').trim();
+
+    if (teamMap[origPos] !== undefined) {
+      sheet.getRange(rowNum, teamColIdx).setValue(teamMap[origPos]);
       updatedCount++;
     }
-    if (origPos && posMap[origPos]) {
+    if (posMap[origPos] !== undefined) {
       sheet.getRange(rowNum, posColIdx).setValue(posMap[origPos]);
       updatedCount++;
     }
   });
 
-  ui.alert(`✅ 완료: ${updatedCount}개 셀이 표준 카테고리로 업데이트되었습니다.`);
+  ui.alert(`✅ 완료: LinkedIn 출처 행 ${updatedCount}개 셀이 업데이트되었습니다.`);
 }
 
 // ==========================================
