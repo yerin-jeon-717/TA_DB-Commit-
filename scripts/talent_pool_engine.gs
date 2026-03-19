@@ -1,5 +1,5 @@
 /**
- * [v20.7] 인재풀 엔진
+ * [v20.8] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -18,6 +18,8 @@
  * 15. [REFACTOR v20.7] unifyFormatLinkedinToRemember: Recovery/Migration 통합 (이전 경력 현 회사 라인 → 재직 기간 이식)
  * 16. [NEW v20.7] COMPANY_CONFIG 비나우 추가
  * 17. [PERF v20.7] isExcludedCompany: _cfgCache로 PropertiesService 반복 호출 방지
+ * 18. [FIX v20.8] calcDurationBetween: 0년/0개월 생략 (3개월, 2년 형식)
+ * 19. [FIX v20.8] standardizeLineFinal: 이전 경력 info 구분자 ' - ' → ' | ' 변환
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -55,7 +57,7 @@ const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.7')
+  ui.createMenu('🚀 인재풀 엔진 v20.8')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -187,7 +189,7 @@ function standardizeLineFinal(line, isCurrentJob) {
     const sy = now.getFullYear();
     const sm = (now.getMonth() + 1).toString().padStart(2, '0');
     const sD = `${sy}.${sm}`;
-    const durStr = `${y}년 ${m}개월`;
+    const durStr = y === 0 ? `${m}개월` : m === 0 ? `${y}년` : `${y}년 ${m}개월`;
     return isCurrentJob ? `${sD} ~ 현재 (${durStr})` : `[${sD} ~ 현재 (${durStr})]`;
   }
 
@@ -200,8 +202,8 @@ function standardizeLineFinal(line, isCurrentJob) {
     if (durMatch) {
       const dStr = durMatch[1];
       const yMatch = dStr.match(/(\d+)년/), mMatch = dStr.match(/(\d+)개월/);
-      const y = yMatch ? yMatch[1] : "0", m = mMatch ? mMatch[1] : "0";
-      dur = `${y}년 ${m}개월`;
+      const yVal = yMatch ? parseInt(yMatch[1]) : 0, mVal = mMatch ? parseInt(mMatch[1]) : 0;
+      dur = yVal === 0 ? `${mVal}개월` : mVal === 0 ? `${yVal}년` : `${yVal}년 ${mVal}개월`;
     } else {
       const sP = sD.split('.');
       const sy = parseInt(sP[0]), sm = parseInt(sP[1]);
@@ -212,6 +214,7 @@ function standardizeLineFinal(line, isCurrentJob) {
     }
     let info = line.replace(dateRegex, '').replace(/\(.*?\)/g, '').replace(/[\[\]]/g, '').replace(/^\s*[\-·~]\s*/, '').trim();
     info = info.replace(/\(주\)|\(유\)|\(사\)|㈜/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (!isCurrentJob) info = info.replace(' - ', ' | ');  // [v20.8] 링크드인 구분자 통일
     if (!isCurrentJob && isExcludedCompany(info)) return "";
     return isCurrentJob ? `${sD} ~ ${eD} (${dur}) ${info}` : `[${sD} ~ ${eD} (${dur})] ${info}`;
   }
@@ -221,8 +224,10 @@ function standardizeLineFinal(line, isCurrentJob) {
 
 function calcDurationBetween(sy, sm, ey, em) {
   var total = (ey * 12 + em) - (sy * 12 + sm) + 1;
-  if (total <= 0) return "0년 0개월";
+  if (total <= 0) return "0개월";
   var y = Math.floor(total / 12), m = total % 12;
+  if (y === 0) return `${m}개월`;
+  if (m === 0) return `${y}년`;
   return `${y}년 ${m}개월`;
 }
 

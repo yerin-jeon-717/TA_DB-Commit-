@@ -229,7 +229,7 @@ function extractCompaniesFromCareer(text) {
 ## Golden Rules (서브에이전트 포함 모든 코드 수정 시 필수)
 1. **Pinpoint Update** — C열(리멤버 URL), D열(링크드인 URL)은 `setValues` 범위에서 절대 제외
 2. **Bottom-up Name** — 이름 마지막 줄(`pop()`) = 국문 성함, 중복 대조의 기준
-3. **Zero-Padding** — 기간 출력은 항상 `"0년 4개월"` 형식 (정렬 무결성)
+3. **Zero-Padding** — 0값은 생략: `"3개월"`, `"1년 3개월"`, `"2년"` 형식 (`"0년 3개월"`, `"2년 0개월"` 금지)
 4. **Format-first** — 중복 탐지 실행 전 반드시 포맷 정화 선행
 5. **Gate-first Dedup** — 입사년월 불일치 시 다른 조건 확인 없이 즉시 제외
 6. **Company-scoped** — 중복처리·카테고리 매핑 함수는 `getOrSelectCompany()` 기반으로 동작. `getActiveSheet()` 사용 금지
