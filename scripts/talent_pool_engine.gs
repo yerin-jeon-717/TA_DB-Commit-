@@ -1,5 +1,5 @@
 /**
- * [v20.6] 인재풀 엔진
+ * [v20.7] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -13,6 +13,11 @@
  * 10. [UX v20.4] buildCategoryMappingReport: 표준 카테고리 열에 팀/직책 분리 드롭다운 추가
  * 11. [REFACTOR v20.6] buildCategoryMappingReport: CATEGORY_RULES/autoDetectCategory 제거, 팀/직책 병렬 6열 레이아웃으로 변경
  * 12. [FIX v20.6] importLinkedInData/importRememberData: 타임스탬프 기반 새 시트 생성, 기존 시트 덮어쓰기 방지
+ * 13. [NEW v20.7] normalizeEngDateAndDuration: 영문 날짜(Feb 2021→2021.02)/기간(1 yr 8 mos→1년 8개월)/Present→현재 정규화
+ * 14. [FIX v20.7] standardizeLineFinal: 영문 날짜·기간 전처리 추가
+ * 15. [REFACTOR v20.7] unifyFormatLinkedinToRemember: Recovery/Migration 통합 (이전 경력 현 회사 라인 → 재직 기간 이식)
+ * 16. [NEW v20.7] COMPANY_CONFIG 비나우 추가
+ * 17. [PERF v20.7] isExcludedCompany: _cfgCache로 PropertiesService 반복 호출 방지
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -34,6 +39,13 @@ const COMPANY_CONFIG = {
     sheet1Name: 'Remember_APR',
     sheet2Name: 'linkedin_APR',
     excludeKeywords  : ["APR", "에이피알", "aprilskin", "medicube", "에이피알커뮤니케이션즈"]
+  },
+  "비나우": {
+    linkedinSourceId : "",
+    rememberSourceId  : "",
+    sheet1Name: 'Remember_비나우',
+    sheet2Name: 'linkedin_비나우',
+    excludeKeywords  : ["비나우", "benow"]
   }
 };
 
@@ -43,7 +55,7 @@ const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.6')
+  ui.createMenu('🚀 인재풀 엔진 v20.7')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -68,7 +80,28 @@ function onOpen() {
 }
 
 // ==========================================
-// ■ 포맷 통일 로직 (역산 포함) — v19.28 유지
+// ■ [v20.7] 영문 날짜·기간 정규화
+// ==========================================
+function normalizeEngDateAndDuration(line) {
+  // 영문 기간: "1 yr 8 mos" / "4 yrs 6 mos" / "2 yrs" / "6 mos"
+  line = line.replace(/(\d+)\s+yrs?\s+(\d+)\s+mos?/gi, (_, y, m) => `${y}년 ${m}개월`);
+  line = line.replace(/(\d+)\s+yrs?/gi, '$1년');
+  line = line.replace(/(\d+)\s+mos?/gi, '$1개월');
+
+  // 영문 월 이름 → YYYY.MM ("Feb 2021" → "2021.02")
+  const M = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
+             jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  line = line.replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/gi,
+    (_, mon, yr) => `${yr}.${M[mon.toLowerCase()]}`);
+
+  // Present → 현재
+  line = line.replace(/\bPresent\b/gi, '현재');
+
+  return line;
+}
+
+// ==========================================
+// ■ 포맷 통일 로직 (역산 포함) — v19.28 기반, v20.7 수정
 // ==========================================
 function unifyFormatLinkedinToRemember() {
   try {
@@ -78,19 +111,57 @@ function unifyFormatLinkedinToRemember() {
     const careerColIdx = (tMap["재직 기간"] || tMap["재직기간"]) + 1;
     const prevColIdx = tMap["이전 경력"] + 1;
 
-    // 1. 재직 기간 업데이트 (핀포인트 — C·D열 절대 포함 금지)
-    const careerRange = sheet.getRange(2, careerColIdx, lastRow - 1, 1);
-    const newCareer = careerRange.getValues().map(r => [
-      r[0] ? r[0].toString().split('\n').map(l => standardizeLineFinal(l, true)).filter(String).join('\n') : ""
-    ]);
-    careerRange.setValues(newCareer);
+    // cfg를 한 번만 호출 (PropertiesService 반복 호출 방지)
+    const cfg = getOrSelectCompany();
+    const keywords = (cfg && cfg.excludeKeywords) ? cfg.excludeKeywords : [];
 
-    // 2. 이전 경력 업데이트 (현재 직장 제외 포함)
-    const prevRange = sheet.getRange(2, prevColIdx, lastRow - 1, 1);
-    const newPrev = prevRange.getValues().map(r => [
-      r[0] ? r[0].toString().split('\n').map(l => standardizeLineFinal(l, false)).filter(String).join('\n') : ""
-    ]);
-    prevRange.setValues(newPrev);
+    // 재직 기간·이전 경력 동시 읽기 (Recovery를 위해 두 열 함께 처리)
+    const careerVals = sheet.getRange(2, careerColIdx, lastRow - 1, 1).getValues();
+    const prevVals   = sheet.getRange(2, prevColIdx,   lastRow - 1, 1).getValues();
+
+    const newCareer = [], newPrev = [];
+
+    for (let i = 0; i < careerVals.length; i++) {
+      let careerText = careerVals[i][0] ? careerVals[i][0].toString() : '';
+      let prevText   = prevVals[i][0]   ? prevVals[i][0].toString()   : '';
+
+      // ── [v20.7] Recovery: 이전 경력에서 현 회사 라인 감지 → 재직 기간 이식 ──
+      if (keywords.length > 0 && prevText) {
+        const prevLines  = prevText.split('\n');
+        const compLines  = prevLines.filter(l => isCurrentCompanyLine(l, keywords));
+        const otherLines = prevLines.filter(l => !isCurrentCompanyLine(l, keywords));
+
+        if (compLines.length > 0) {
+          // 재직 기간이 비어있거나 기간 단독 형식이면 → 이전 경력에서 가장 이른 날짜 추출해 이식
+          const normKo = normalizeEngDateAndDuration(careerText.trim())
+            .replace(/(\d{4})년\s*(\d{1,2})월/g, (_, y, m) => y + '.' + m.padStart(2, '0'));
+          const isDurationOnly = /^(\d+년\s*\d+개월|\d+년|\d+개월)$/.test(normKo.trim());
+          if (careerText.trim() === '' || isDurationOnly) {
+            const earliest = extractEarliestDate(compLines);
+            if (earliest) careerText = earliest + ' ~ 현재';
+          }
+          // 이전 경력에서 현 회사 라인 제거
+          prevText = otherLines.join('\n');
+        }
+      }
+
+      // 재직 기간 정규화 (핀포인트 — C·D열 절대 포함 금지)
+      newCareer.push([
+        careerText
+          ? careerText.split('\n').map(l => standardizeLineFinal(l, true)).filter(String).join('\n')
+          : ''
+      ]);
+
+      // 이전 경력 정규화
+      newPrev.push([
+        prevText
+          ? prevText.split('\n').map(l => standardizeLineFinal(l, false)).filter(String).join('\n')
+          : ''
+      ]);
+    }
+
+    sheet.getRange(2, careerColIdx, newCareer.length, 1).setValues(newCareer);
+    sheet.getRange(2, prevColIdx,   newPrev.length,   1).setValues(newPrev);
 
     SpreadsheetApp.getUi().alert("✅ [역산 완료] 모든 경력 포맷이 표준화되었습니다.");
   } catch (e) { SpreadsheetApp.getUi().alert("오류: " + e.message); }
@@ -99,6 +170,7 @@ function unifyFormatLinkedinToRemember() {
 function standardizeLineFinal(line, isCurrentJob) {
   if (!line || line.trim() === "" || line === "-") return "";
   line = line.trim();
+  line = normalizeEngDateAndDuration(line);  // [v20.7] 영문 날짜·기간 전처리
   line = line.replace(/(\d{4})년\s*(\d{1,2})월/g, (m, p1, p2) => p1 + "." + p2.padStart(2, '0'));
 
   const dateRegex = /(\d{4}\.\d{2})\s*[\-~|·]\s*([\d\.]+|현재|Present)/i;
@@ -154,11 +226,32 @@ function calcDurationBetween(sy, sm, ey, em) {
   return `${y}년 ${m}개월`;
 }
 
+// [v20.7] 이전 경력 라인이 현 회사 키워드를 포함하는지 판별
+function isCurrentCompanyLine(line, keywords) {
+  const clean = line.toLowerCase().replace(/\s/g, '');
+  return keywords.some(kw => clean.includes(kw.toLowerCase().replace(/\s/g, '')));
+}
+
+// [v20.7] 현 회사 라인 목록에서 가장 이른 시작 날짜(YYYY.MM) 추출
+function extractEarliestDate(lines) {
+  let earliest = null;
+  lines.forEach(line => {
+    let norm = normalizeEngDateAndDuration(line);
+    norm = norm.replace(/(\d{4})년\s*(\d{1,2})월/g, (_, y, m) => y + '.' + m.padStart(2, '0'));
+    const dates = [...norm.matchAll(/(\d{4}\.\d{2})/g)].map(m => m[1]);
+    dates.forEach(d => { if (!earliest || d < earliest) earliest = d; });
+  });
+  return earliest;
+}
+
+// [v20.7] cfg 캐시 — 실행당 한 번만 PropertiesService 읽음
+let _cfgCache = undefined;
+
 function isExcludedCompany(text) {
-  const cfg = getOrSelectCompany();
-  if (!cfg || !cfg.excludeKeywords || !text) return false;
+  if (_cfgCache === undefined) _cfgCache = getOrSelectCompany();
+  if (!_cfgCache || !_cfgCache.excludeKeywords || !text) return false;
   const cleanText = text.toLowerCase().replace(/\s/g, '');
-  return cfg.excludeKeywords.some(kw => cleanText.includes(kw.toLowerCase().replace(/\s/g, '')));
+  return _cfgCache.excludeKeywords.some(kw => cleanText.includes(kw.toLowerCase().replace(/\s/g, '')));
 }
 
 // ==========================================
