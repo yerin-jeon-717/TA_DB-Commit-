@@ -20,6 +20,8 @@
  * 17. [PERF v20.7] isExcludedCompany: _cfgCache로 PropertiesService 반복 호출 방지
  * 18. [FIX v20.8] calcDurationBetween: 0년/0개월 생략 (3개월, 2년 형식)
  * 19. [FIX v20.8] standardizeLineFinal: 이전 경력 info 구분자 ' - ' → ' | ' 변환
+ * 20. [FIX v20.8] unifyFormatLinkedinToRemember: A열 회사명 기준 행별 키워드 파생 (getKeywordsForCompany)
+ *     → COMPANY_CONFIG 등록 회사는 excludeKeywords 사용, 미등록 회사는 A열 값 자체를 키워드로
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -113,13 +115,10 @@ function unifyFormatLinkedinToRemember() {
     const careerColIdx = (tMap["재직 기간"] || tMap["재직기간"]) + 1;
     const prevColIdx = tMap["이전 경력"] + 1;
 
-    // cfg를 한 번만 호출 (PropertiesService 반복 호출 방지)
-    const cfg = getOrSelectCompany();
-    const keywords = (cfg && cfg.excludeKeywords) ? cfg.excludeKeywords : [];
-
-    // 재직 기간·이전 경력 동시 읽기 (Recovery를 위해 두 열 함께 처리)
-    const careerVals = sheet.getRange(2, careerColIdx, lastRow - 1, 1).getValues();
-    const prevVals   = sheet.getRange(2, prevColIdx,   lastRow - 1, 1).getValues();
+    // 재직 기간·이전 경력·A열(회사명) 동시 읽기
+    const careerVals  = sheet.getRange(2, careerColIdx, lastRow - 1, 1).getValues();
+    const prevVals    = sheet.getRange(2, prevColIdx,   lastRow - 1, 1).getValues();
+    const companyVals = sheet.getRange(2, 1,            lastRow - 1, 1).getValues(); // A열
 
     const newCareer = [], newPrev = [];
 
@@ -127,11 +126,12 @@ function unifyFormatLinkedinToRemember() {
       let careerText = careerVals[i][0] ? careerVals[i][0].toString() : '';
       let prevText   = prevVals[i][0]   ? prevVals[i][0].toString()   : '';
 
-      // ── [v20.7] Recovery: 이전 경력에서 현 회사 라인 감지 → 재직 기간 이식 ──
-      if (keywords.length > 0 && prevText) {
+      // ── [v20.8] Recovery: A열 회사명 기준으로 행별 키워드 파생 → 이전 경력 현 회사 라인 제거 ──
+      const rowKeywords = getKeywordsForCompany(companyVals[i][0]);
+      if (rowKeywords.length > 0 && prevText) {
         const prevLines  = prevText.split('\n');
-        const compLines  = prevLines.filter(l => isCurrentCompanyLine(l, keywords));
-        const otherLines = prevLines.filter(l => !isCurrentCompanyLine(l, keywords));
+        const compLines  = prevLines.filter(l => isCurrentCompanyLine(l, rowKeywords));
+        const otherLines = prevLines.filter(l => !isCurrentCompanyLine(l, rowKeywords));
 
         if (compLines.length > 0) {
           // 재직 기간이 비어있거나 기간 단독 형식이면 → 이전 경력에서 가장 이른 날짜 추출해 이식
@@ -229,6 +229,20 @@ function calcDurationBetween(sy, sm, ey, em) {
   if (y === 0) return `${m}개월`;
   if (m === 0) return `${y}년`;
   return `${y}년 ${m}개월`;
+}
+
+// [v20.8] A열 회사명 → 키워드 배열 파생
+// COMPANY_CONFIG에 있으면 해당 excludeKeywords 사용, 없으면 회사명 자체를 키워드로
+function getKeywordsForCompany(companyName) {
+  if (!companyName) return [];
+  const name = companyName.toString().trim();
+  if (!name) return [];
+  const configKey = Object.keys(COMPANY_CONFIG).find(k =>
+    k.toLowerCase() === name.toLowerCase() ||
+    (COMPANY_CONFIG[k].excludeKeywords &&
+     COMPANY_CONFIG[k].excludeKeywords.some(kw => name.toLowerCase().includes(kw.toLowerCase())))
+  );
+  return configKey ? COMPANY_CONFIG[configKey].excludeKeywords : [name];
 }
 
 // [v20.7] 이전 경력 라인이 현 회사 키워드를 포함하는지 판별
