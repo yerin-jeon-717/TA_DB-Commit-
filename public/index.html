@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>뷰티셀렉션 인재풀</title>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #FEF9E9;
+      --surface: #FFFDF4;
+      --surface2: #F5EDCF;
+      --border: #E8D9B5;
+      --accent: #FFC3B0;
+      --accent-dark: #e8997f;
+      --accent-deep: #c96b4a;
+      --text: #2a1f1a;
+      --text2: #6b5040;
+      --text3: #a08060;
+      --tag-bg: #FFE9E2;
+      --tag-color: #c96b4a;
+      --red: #c94040;
+      --green: #3d7a4a;
+    }
+    body {
+      font-family: 'Pretendard', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    /* HEADER */
+    header {
+      padding: 20px 36px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 12px rgba(0,0,0,0.04);
+    }
+    .logo-mark {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-mark img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    header h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--text);
+    }
+    header h1 span { color: var(--accent-deep); }
+    .result-count {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--text2);
+      background: var(--surface2);
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .result-count b { color: var(--accent-deep); }
+    /* COMPANY TABS */
+    .company-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 36px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-shrink: 0;
+      position: sticky;
+      top: 69px;
+      z-index: 99;
+      box-shadow: 0 1px 0 var(--border);
+    }
+    .company-tabs::-webkit-scrollbar { height: 3px; }
+    .company-tab {
+      padding: 6px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      background: transparent;
+      white-space: nowrap;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .company-tab:hover { background: var(--surface2); border-color: var(--border); }
+    .company-tab.active {
+      background: var(--accent-deep);
+      border-color: var(--accent-deep);
+      color: white;
+      font-weight: 700;
+    }
+    .company-tab .tab-count {
+      font-size: 11px;
+      opacity: 0.75;
+      font-weight: 500;
+    }
+    .company-tab.active .tab-count { opacity: 0.85; }
+
+    /* LAYOUT */
+    .layout {
+      display: flex;
+      min-height: calc(100vh - 115px);
+    }
+
+    /* SIDEBAR */
+    aside {
+      width: 272px;
+      flex-shrink: 0;
+      padding: 20px 18px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      position: sticky;
+      top: 115px;
+      height: calc(100vh - 115px);
+    }
+    .filter-section { margin-bottom: 22px; }
+    .filter-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 8px;
+    }
+    .f-input {
+      width: 100%;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+    }
+    .f-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,195,176,0.25);
+    }
+    .f-input::placeholder { color: var(--text3); }
+
+    /* 검색 가능한 드롭다운 */
+    .searchable-select { position: relative; }
+    .searchable-select .ss-input {
+      width: 100%;
+      padding: 9px 32px 9px 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+      cursor: text;
+    }
+    .searchable-select .ss-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,195,176,0.25);
+    }
+    .searchable-select .ss-input::placeholder { color: var(--text3); }
+    .ss-arrow {
+      position: absolute;
+      right: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--text3);
+      font-size: 11px;
+      transition: transform 0.2s;
+    }
+    .searchable-select.open .ss-arrow { transform: translateY(-50%) rotate(180deg); }
+    .ss-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+      z-index: 200;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .searchable-select.open .ss-dropdown { display: block; }
+    .ss-option {
+      padding: 9px 13px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s;
+      color: var(--text);
+      border-bottom: 1px solid var(--surface2);
+    }
+    .ss-option:last-child { border-bottom: none; }
+    .ss-option:hover, .ss-option.active { background: var(--tag-bg); color: var(--accent-deep); }
+    .ss-option.selected { font-weight: 600; color: var(--accent-deep); }
+    .ss-no-result { padding: 9px 13px; font-size: 13px; color: var(--text3); }
+
+    /* 선택된 값 표시 배지 */
+    .selected-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 6px;
+      padding: 3px 9px;
+      background: var(--tag-bg);
+      color: var(--accent-deep);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(201,107,74,0.2);
+    }
+    .selected-badge .clear-x {
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      opacity: 0.6;
+    }
+    .selected-badge .clear-x:hover { opacity: 1; }
+
+    /* 범위 인풋 */
+    .range-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .range-row .f-input { text-align: center; }
+    .range-row span { color: var(--text3); font-size: 12px; flex-shrink: 0; }
+
+    /* 리셋 버튼 */
+    .reset-btn {
+      width: 100%;
+      padding: 9px;
+      background: transparent;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      color: var(--text2);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.18s;
+      margin-top: 4px;
+    }
+    .reset-btn:hover { border-color: var(--red); color: var(--red); background: #fff4f4; }
+
+    /* MAIN */
+    main {
+      flex: 1;
+      padding: 22px 24px;
+      overflow-y: auto;
+    }
+    .sort-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .sort-bar span { font-size: 12px; color: var(--text3); margin-right: 2px; }
+    .sort-btn {
+      padding: 5px 13px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sort-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    .sort-btn:hover:not(.active) { border-color: var(--accent-dark); color: var(--accent-deep); }
+
+    /* 정렬바 인라인 인턴 제외 토글 */
+    .intern-toggle {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.18s;
+      background: transparent;
+      user-select: none;
+    }
+    .intern-toggle:hover { border-color: var(--accent-dark); }
+    .intern-toggle.active { border-color: var(--accent-deep); background: var(--tag-bg); }
+    .intern-toggle-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text2);
+      white-space: nowrap;
+    }
+    .intern-toggle.active .intern-toggle-label { color: var(--accent-deep); font-weight: 600; }
+    .intern-toggle-switch {
+      width: 30px; height: 17px;
+      background: var(--border);
+      border-radius: 9px;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .intern-toggle.active .intern-toggle-switch { background: var(--accent-deep); }
+    .intern-toggle-switch::after {
+      content: '';
+      position: absolute;
+      width: 11px; height: 11px;
+      background: white;
+      border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+    .intern-toggle.active .intern-toggle-switch::after { transform: translateX(13px); }
+
+    /* GRID */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    /* CARD */
+    .card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+    }
+    .card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 6px 20px rgba(255,195,176,0.25);
+      transform: translateY(-2px);
+    }
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+      margin-bottom: 14px;
+    }
+    .avatar {
+      width: 42px; height: 42px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 16px; color: white;
+      flex-shrink: 0;
+    }
+    .card-name {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-bottom: 3px;
+    }
+    .card-role {
+      font-size: 12.5px;
+      color: var(--text2);
+    }
+    .card-links {
+      margin-left: auto;
+      display: flex;
+      gap: 5px;
+    }
+    .link-btn {
+      width: 29px; height: 29px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      color: var(--text2);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .link-btn:hover { border-color: var(--accent-dark); color: var(--accent-deep); background: var(--tag-bg); }
+    .link-btn.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+    .card-divider {
+      height: 1px;
+      background: var(--border);
+      margin-bottom: 13px;
+    }
+    .card-info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-bottom: 12px;
+    }
+    .info-item-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 2px;
+    }
+    .info-item-value {
+      font-size: 12.5px;
+      color: var(--text);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .info-item.full { grid-column: 1 / -1; }
+    .prev-companies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .company-tag {
+      padding: 3px 8px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid rgba(201,107,74,0.18);
+    }
+
+    /* EMPTY */
+    .empty {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--text3);
+      grid-column: 1/-1;
+    }
+    .empty-icon { font-size: 44px; margin-bottom: 14px; }
+    .empty h3 { font-size: 17px; color: var(--text2); margin-bottom: 6px; }
+    .empty p { font-size: 13px; }
+
+    /* 인턴 제외 토글 (사이드바용) */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 13px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      cursor: pointer;
+      transition: border-color 0.18s;
+      user-select: none;
+    }
+    .toggle-row:hover { border-color: var(--accent-dark); }
+    .toggle-row.active { border-color: var(--accent-deep); background: var(--tag-bg); }
+    .toggle-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+    }
+    .toggle-row.active .toggle-label { color: var(--accent-deep); font-weight: 600; }
+    .toggle-switch {
+      width: 36px; height: 20px;
+      background: var(--border);
+      border-radius: 10px;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle-row.active .toggle-switch { background: var(--accent); }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      background: white;
+      border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .toggle-row.active .toggle-switch::after { transform: translateX(16px); }
+
+    /* 이전 재직자 뱃지 */
+    .alumni-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #7c5c00;
+      background: #fff3cd;
+      border: 1px solid #f0d060;
+      border-radius: 20px;
+      padding: 2px 8px;
+      margin-left: 6px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    /* 스켈레톤 로딩 */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .skeleton-card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      border: 1.5px solid var(--border);
+    }
+    .skeleton-line {
+      height: 12px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.4s ease-in-out infinite;
+      margin-bottom: 10px;
+    }
+    .skeleton-avatar {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.4s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .skeleton-header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .skeleton-header-text { flex: 1; }
+
+    /* PAGINATION */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 18px;
+    }
+    .page-btn {
+      min-width: 34px; height: 34px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      padding: 0 8px;
+    }
+    .page-btn:hover { border-color: var(--accent-dark); color: var(--accent-deep); }
+    .page-btn.active { background: var(--accent-deep); border-color: var(--accent-deep); color: white; font-weight: 700; }
+    .page-btn:disabled { opacity: 0.35; cursor: default; }
+
+    /* BOOKMARK */
+    .bookmark-btn {
+      width: 28px; height: 28px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+      padding: 0;
+      color: var(--text3);
+    }
+    .bookmark-btn:hover { background: var(--surface2); }
+    .bookmark-btn.saved { color: #e8a020; }
+
+    .bookmark-drawer {
+      position: fixed;
+      right: -400px;
+      top: 0; bottom: 0;
+      width: 380px;
+      background: var(--surface);
+      border-left: 1.5px solid var(--border);
+      box-shadow: -8px 0 32px rgba(0,0,0,0.08);
+      z-index: 300;
+      transition: right 0.3s cubic-bezier(0.4,0,0.2,1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .bookmark-drawer.open { right: 0; }
+    .bookmark-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.25);
+      z-index: 299;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .bookmark-overlay.open { opacity: 1; pointer-events: all; }
+    .bookmark-drawer-header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .bookmark-drawer-header h2 {
+      font-size: 16px;
+      font-weight: 700;
+      flex: 1;
+      color: var(--text);
+    }
+    .bookmark-drawer-header .bk-count {
+      font-size: 12px;
+      color: var(--text3);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px 10px;
+    }
+    .bookmark-close {
+      width: 30px; height: 30px;
+      border: none; background: none;
+      font-size: 20px; cursor: pointer;
+      color: var(--text3);
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+    }
+    .bookmark-close:hover { background: var(--surface2); color: var(--text); }
+    .bookmark-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .bookmark-empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text3);
+      font-size: 14px;
+    }
+    .bookmark-empty .empty-icon { font-size: 36px; margin-bottom: 12px; }
+    .bookmark-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+      background: var(--bg);
+      transition: border-color 0.15s;
+    }
+    .bookmark-item:hover { border-color: var(--accent-dark); }
+    .bookmark-item .bk-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: white;
+      flex-shrink: 0;
+    }
+    .bookmark-item .bk-info { flex: 1; min-width: 0; }
+    .bookmark-item .bk-name {
+      font-size: 13px; font-weight: 600;
+      color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .bookmark-item .bk-sub {
+      font-size: 11px; color: var(--text3);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .bk-remove {
+      width: 24px; height: 24px;
+      border: none; background: none;
+      font-size: 14px; color: var(--text3);
+      cursor: pointer; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .bk-remove:hover { background: var(--surface2); color: var(--red); }
+    .bookmark-footer {
+      padding: 14px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .bk-clear-btn {
+      flex: 1;
+      padding: 9px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      background: none;
+      font-size: 12px;
+      color: var(--text3);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .bk-clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* 헤더 북마크 버튼 */
+    .header-bookmark-btn {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      background: var(--surface2);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text2);
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .header-bookmark-btn:hover { border-color: var(--accent-dark); color: var(--accent-deep); }
+    .header-bookmark-btn .hb-count {
+      background: var(--accent-deep);
+      color: white;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 11px;
+      display: none;
+    }
+    .header-bookmark-btn .hb-count.visible { display: inline; }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 960px) {
+      .layout { flex-direction: column; }
+      aside {
+        position: static;
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      main { padding: 18px 16px; }
+      header { padding: 16px 18px; }
+      .company-tabs { padding: 8px 16px; top: 64px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-mark"></div>
+    <h1>뷰티셀렉션 <span>인재풀</span></h1>
+    <div class="result-count" id="resultCount">총 <b>0</b>명</div>
+    <button class="header-bookmark-btn" id="headerBookmarkBtn">
+      북마크
+      <span class="hb-count" id="headerBookmarkCount">0</span>
+    </button>
+  </header>
+
+  <div class="company-tabs" id="companyTabs"></div>
+
+  <div class="layout">
+    <aside>
+      <div class="filter-section">
+        <div class="filter-label">통합 검색</div>
+        <input id="searchInput" class="f-input" placeholder="이름, 회사, 직무, 팀, 직책 등" />
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">이름</div>
+        <input id="nameInput" class="f-input" placeholder="이름으로 검색" />
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">회사</div>
+        <div id="companySelect" class="searchable-select">
+          <input class="ss-input" type="text" placeholder="회사 선택 또는 검색" />
+          <span class="ss-arrow">▼</span>
+          <div class="ss-dropdown"></div>
+        </div>
+        <div id="companyBadgeContainer"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">직무</div>
+        <div id="jobSelect" class="searchable-select">
+          <input class="ss-input" type="text" placeholder="직무 선택 또는 검색" />
+          <span class="ss-arrow">▼</span>
+          <div class="ss-dropdown"></div>
+        </div>
+        <div id="jobBadgeContainer"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">팀</div>
+        <div id="teamSelect" class="searchable-select">
+          <input class="ss-input" type="text" placeholder="팀 선택 또는 검색" />
+          <span class="ss-arrow">▼</span>
+          <div class="ss-dropdown"></div>
+        </div>
+        <div id="teamBadgeContainer"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">직책</div>
+        <div id="roleSelect" class="searchable-select">
+          <input class="ss-input" type="text" placeholder="직책 선택 또는 검색" />
+          <span class="ss-arrow">▼</span>
+          <div class="ss-dropdown"></div>
+        </div>
+        <div id="roleBadgeContainer"></div>
+      </div>
+
+      <!-- [FIX] Region: 텍스트 입력 → searchable-select 드롭다운 -->
+      <div class="filter-section">
+        <div class="filter-label">Region</div>
+        <div id="regionSelect" class="searchable-select">
+          <input class="ss-input" type="text" placeholder="Region 선택 또는 검색" />
+          <span class="ss-arrow">▼</span>
+          <div class="ss-dropdown"></div>
+        </div>
+        <div id="regionBadgeContainer"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">옵션</div>
+        <div id="internSidebarToggle" class="toggle-row">
+          <div class="toggle-label">인턴 제외</div>
+          <div class="toggle-switch"></div>
+        </div>
+      </div>
+
+      <button id="resetBtn" class="reset-btn">필터 초기화</button>
+    </aside>
+
+    <main>
+      <div class="sort-bar">
+        <span>정렬</span>
+        <button class="sort-btn active" data-sort="default">기본</button>
+        <button class="sort-btn" data-sort="latest_join">최신 입사 순</button>
+        <button class="sort-btn" data-sort="old_join">입사일 오래된 순</button>
+        <button class="sort-btn" data-sort="career_desc">총 경력 긴 순</button>
+        <button class="sort-btn" data-sort="career_asc">총 경력 짧은 순</button>
+        <button class="sort-btn" data-sort="company">회사명</button>
+        <button class="sort-btn" data-sort="name">이름</button>
+        <div class="intern-toggle" id="internToggle">
+          <div class="intern-toggle-label">인턴 제외</div>
+          <div class="intern-toggle-switch"></div>
+        </div>
+      </div>
+
+      <div class="cards-grid" id="cardsGrid"></div>
+      <div class="pagination" id="pagination"></div>
+    </main>
+  </div>
+
+  <div class="bookmark-drawer" id="bookmarkDrawer">
+    <div class="bookmark-drawer-header">
+      <h2>북마크한 인재</h2>
+      <div class="bk-count" id="bookmarkCount">0명</div>
+      <button class="bookmark-close" id="bookmarkCloseBtn">×</button>
+    </div>
+    <div class="bookmark-list" id="bookmarkList"></div>
+    <div class="bookmark-footer">
+      <button class="bk-clear-btn" id="bookmarkClearBtn">모든 북마크 삭제</button>
+    </div>
+  </div>
+  <div class="bookmark-overlay" id="bookmarkOverlay"></div>
+
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwtaIB95DTzicZFfP-Qm8HchChF2ibwcX7831ZOAdMNFIAecbm9EkTc9EBY9pLP_cuF5w/exec";
+
+    let RAWDATA = [];
+    let filterData = [];
+    const PAGESIZE = 20;
+    let currentPage = 1;
+    let currentSort = "default";
+    let selectedCompanyTab = "ALL";
+    // [FIX] 인턴 제외 토글 상태 단일화 (정렬바 + 사이드바 동기화)
+    let excludeIntern = false;
+    let selectedCompany = null;
+    let selectedJob = null;
+    let selectedTeam = null;
+    let selectedRole = null;
+    let selectedRegion = null;
+    let bookmarks = [];
+
+    const cardsGrid = document.getElementById("cardsGrid");
+    const paginationEl = document.getElementById("pagination");
+    const companyTabsEl = document.getElementById("companyTabs");
+    const resultCountEl = document.getElementById("resultCount").querySelector("b");
+
+    const searchInput = document.getElementById("searchInput");
+    const nameInput = document.getElementById("nameInput");
+
+    const resetBtn = document.getElementById("resetBtn");
+    const internToggleEl = document.getElementById("internToggle");
+    const internSidebarToggleEl = document.getElementById("internSidebarToggle");
+
+    const bookmarkDrawer = document.getElementById("bookmarkDrawer");
+    const bookmarkOverlay = document.getElementById("bookmarkOverlay");
+    const bookmarkListEl = document.getElementById("bookmarkList");
+    const bookmarkCountEl = document.getElementById("bookmarkCount");
+    const bookmarkCloseBtn = document.getElementById("bookmarkCloseBtn");
+    const bookmarkClearBtn = document.getElementById("bookmarkClearBtn");
+    const headerBookmarkBtn = document.getElementById("headerBookmarkBtn");
+    const headerBookmarkCount = document.getElementById("headerBookmarkCount");
+
+    const companySelect = document.getElementById("companySelect");
+    const jobSelect = document.getElementById("jobSelect");
+    const teamSelect = document.getElementById("teamSelect");
+    const roleSelect = document.getElementById("roleSelect");
+    const regionSelect = document.getElementById("regionSelect");
+    const companyBadgeContainer = document.getElementById("companyBadgeContainer");
+    const jobBadgeContainer = document.getElementById("jobBadgeContainer");
+    const teamBadgeContainer = document.getElementById("teamBadgeContainer");
+    const roleBadgeContainer = document.getElementById("roleBadgeContainer");
+    const regionBadgeContainer = document.getElementById("regionBadgeContainer");
+
+    // ---------- 유틸 ----------
+
+    // [FIX] XSS 방지: innerHTML에 삽입되는 사용자 데이터는 반드시 이 함수로 이스케이프
+    function esc(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // [FIX] debounce: 연속 입력 시 update() 과도 호출 방지
+    function debounce(fn, delay) {
+      let timer;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    function showSkeleton() {
+      cardsGrid.innerHTML = "";
+      for (let i = 0; i < 6; i++) {
+        const sk = document.createElement("div");
+        sk.className = "skeleton-card";
+        sk.innerHTML = `
+          <div class="skeleton-header">
+            <div class="skeleton-avatar"></div>
+            <div class="skeleton-header-text">
+              <div class="skeleton-line" style="width:60%"></div>
+              <div class="skeleton-line" style="width:40%"></div>
+            </div>
+          </div>
+          <div class="skeleton-line" style="width:90%"></div>
+          <div class="skeleton-line" style="width:80%"></div>
+          <div class="skeleton-line" style="width:70%"></div>
+        `;
+        cardsGrid.appendChild(sk);
+      }
+    }
+
+    // [FIX] 총 경력 → 총 개월 수로 변환 (기존: 첫 숫자만 추출해서 오동작)
+    // "3년 5개월" → 41, "10개월" → 10, "2년" → 24
+    function parseCareerToMonths(str) {
+      if (!str || str === "-") return 0;
+      const y = str.match(/(\d+)년/);
+      const m = str.match(/(\d+)개월/);
+      return (y ? parseInt(y[1]) * 12 : 0) + (m ? parseInt(m[1]) : 0);
+    }
+
+    // [FIX] 재직 기간 문자열에서 입사일 Date 객체 추출
+    // GAS가 tenure_start(YYYY.MM)를 반환하므로 해당 필드 우선 사용,
+    // 없으면 tenure 문자열에서 직접 파싱
+    function parseTenureStart(p) {
+      const src = p.tenure_start || p.tenure || "";
+      const m = src.match(/(\d{4})\.(\d{2})/);
+      if (!m) return null;
+      return new Date(parseInt(m[1]), parseInt(m[2]) - 1, 1);
+    }
+
+    // [FIX] 이전 경력 라인에서 회사명만 추출
+    // 포맷: "[2022.06 ~ 2022.08 (3개월)] 회사명 | 팀 | 직책"
+    //  → "회사명" 만 반환
+    function extractCompanyFromCareerLine(line) {
+      const m = line.match(/\]\s*([^|\n]+)/);
+      if (m) return m[1].trim();
+      // 대괄호 없는 경우 그대로 반환 (줄 자체가 회사명일 수 있음)
+      return line.replace(/^\[.*?\]\s*/, "").split("|")[0].trim();
+    }
+
+    function buildCompanyTabs() {
+      const counts = {};
+      RAWDATA.forEach((p) => {
+        const c = p.company || "기타";
+        counts[c] = (counts[c] || 0) + 1;
+      });
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+      companyTabsEl.innerHTML = "";
+      const allBtn = document.createElement("button");
+      allBtn.className = "company-tab active";
+      allBtn.dataset.company = "ALL";
+      allBtn.innerHTML = `전체 <span class="tab-count">${RAWDATA.length}</span>`;
+      companyTabsEl.appendChild(allBtn);
+
+      entries.forEach(([name, count]) => {
+        const btn = document.createElement("button");
+        btn.className = "company-tab";
+        btn.dataset.company = name;
+        // [FIX] esc() 적용
+        btn.innerHTML = `${esc(name)} <span class="tab-count">${count}</span>`;
+        companyTabsEl.appendChild(btn);
+      });
+
+      companyTabsEl.addEventListener("click", (e) => {
+        const btn = e.target.closest(".company-tab");
+        if (!btn) return;
+        document.querySelectorAll(".company-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedCompanyTab = btn.dataset.company;
+        currentPage = 1;
+        update();
+      });
+    }
+
+    // [FIX] readonly 제거 + 검색어 입력 시 드롭다운 필터링 동작하도록 수정
+    function setupSearchableSelect(wrapper, getOptions, onSelect, getBadgeContainer, getSelectedValue) {
+      const input = wrapper.querySelector(".ss-input");
+      const dropdown = wrapper.querySelector(".ss-dropdown");
+
+      function close() {
+        wrapper.classList.remove("open");
+        // 선택된 값이 있으면 표시, 없으면 placeholder로 복원
+        input.value = getSelectedValue() || "";
+        if (!getSelectedValue()) input.value = "";
+      }
+
+      function open() {
+        wrapper.classList.add("open");
+        renderOptions("");
+      }
+
+      function renderOptions(filter) {
+        const options = getOptions();
+        const lower = filter.toLowerCase();
+        const filtered = filter
+          ? options.filter(o => o.toLowerCase().includes(lower))
+          : options;
+        dropdown.innerHTML = "";
+
+        if (!filtered.length) {
+          const div = document.createElement("div");
+          div.className = "ss-no-result";
+          div.textContent = "결과 없음";
+          dropdown.appendChild(div);
+          return;
+        }
+
+        const selected = getSelectedValue();
+        filtered.forEach((opt) => {
+          const div = document.createElement("div");
+          div.className = "ss-option" + (opt === selected ? " selected" : "");
+          div.textContent = opt;
+          div.addEventListener("mousedown", (e) => {
+            // mousedown으로 처리해야 input blur보다 먼저 실행됨
+            e.preventDefault();
+            onSelect(opt === selected ? null : opt);
+            input.value = opt === selected ? "" : opt;
+            close();
+            renderBadge();
+            currentPage = 1;
+            update();
+          });
+          dropdown.appendChild(div);
+        });
+      }
+
+      function renderBadge() {
+        const value = getSelectedValue();
+        const container = getBadgeContainer();
+        container.innerHTML = "";
+        if (!value) return;
+        const badge = document.createElement("div");
+        badge.className = "selected-badge";
+        // [FIX] esc() 적용
+        badge.innerHTML = `<span>${esc(value)}</span><span class="clear-x">×</span>`;
+        badge.querySelector(".clear-x").addEventListener("click", () => {
+          onSelect(null);
+          input.value = "";
+          renderBadge();
+          currentPage = 1;
+          update();
+        });
+        container.appendChild(badge);
+      }
+
+      input.addEventListener("focus", () => {
+        open();
+      });
+
+      input.addEventListener("input", (e) => {
+        if (!wrapper.classList.contains("open")) open();
+        renderOptions(e.target.value || "");
+      });
+
+      input.addEventListener("blur", () => {
+        // blur 시 약간 지연 후 닫기 (mousedown 이벤트가 먼저 처리되도록)
+        setTimeout(close, 150);
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!wrapper.contains(e.target)) close();
+      });
+
+      renderBadge();
+    }
+
+    // [FIX] 인턴 제외 토글 단일화 — 정렬바·사이드바 모두 동기화
+    function setExcludeIntern(val) {
+      excludeIntern = val;
+      internToggleEl.classList.toggle("active", val);
+      internSidebarToggleEl.classList.toggle("active", val);
+    }
+
+    function applyFilters() {
+      const q = (searchInput.value || "").trim().toLowerCase();
+      const nameQ = (nameInput.value || "").trim().toLowerCase();
+
+      filterData = RAWDATA.filter((p) => {
+        if (selectedCompanyTab !== "ALL" && (p.company || "기타") !== selectedCompanyTab) return false;
+        if (selectedCompany && (p.company || "") !== selectedCompany) return false;
+        if (selectedJob && (p.job || "") !== selectedJob) return false;
+        if (selectedTeam && (p.team || "") !== selectedTeam) return false;
+        if (selectedRole && (p.role || "") !== selectedRole) return false;
+        if (selectedRegion && (p.region || "") !== selectedRegion) return false;
+
+        if (excludeIntern) {
+          const role = (p.role || "").toLowerCase();
+          const job = (p.job || "").toLowerCase();
+          if (role.includes("인턴") || job.includes("인턴") ||
+              role.includes("intern") || job.includes("intern")) return false;
+        }
+
+        if (nameQ && !(p.name || "").toLowerCase().includes(nameQ)) return false;
+
+        if (!q) return true;
+        const hay = [p.name, p.company, p.job, p.team, p.role,
+                     p.prev_career_raw, p.education, p.region]
+          .join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+
+      // 정렬
+      if (currentSort === "company") {
+        filterData.sort((a, b) => (a.company || "").localeCompare(b.company || ""));
+      } else if (currentSort === "name") {
+        filterData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      } else if (currentSort === "career_desc") {
+        // [FIX] 총 개월 수 기준 비교
+        filterData.sort((a, b) => parseCareerToMonths(b.total_career) - parseCareerToMonths(a.total_career));
+      } else if (currentSort === "career_asc") {
+        filterData.sort((a, b) => parseCareerToMonths(a.total_career) - parseCareerToMonths(b.total_career));
+      } else if (currentSort === "latest_join") {
+        // [FIX] tenure_start(GAS 파싱값) 기준 정렬
+        filterData.sort((a, b) => {
+          const da = parseTenureStart(a), db = parseTenureStart(b);
+          if (!da && !db) return 0;
+          if (!da) return 1;
+          if (!db) return -1;
+          return db - da;
+        });
+      } else if (currentSort === "old_join") {
+        filterData.sort((a, b) => {
+          const da = parseTenureStart(a), db = parseTenureStart(b);
+          if (!da && !db) return 0;
+          if (!da) return 1;
+          if (!db) return -1;
+          return da - db;
+        });
+      }
+
+      resultCountEl.textContent = filterData.length;
+    }
+
+    function renderCards() {
+      if (!filterData.length) {
+        cardsGrid.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">🕵️‍♀️</div>
+            <h3>조건에 맞는 인재가 없습니다.</h3>
+            <p>검색어 또는 필터를 조정해 보세요.</p>
+          </div>
+        `;
+        paginationEl.innerHTML = "";
+        return;
+      }
+
+      const start = (currentPage - 1) * PAGESIZE;
+      const pageItems = filterData.slice(start, start + PAGESIZE);
+
+      cardsGrid.innerHTML = "";
+      pageItems.forEach((p) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        const isBookmarked = bookmarks.includes(p.id);
+
+        // [FIX] 이전 경력 라인에서 회사명 파싱
+        // 포맷: "[날짜] 회사명 | 팀 | 직책" → "회사명"만 추출
+        const prevCompanies = (p.prev_career_raw || "")
+          .split("\n")
+          .map(l => extractCompanyFromCareerLine(l.trim()))
+          .filter(Boolean)
+          .filter((v, i, arr) => arr.indexOf(v) === i) // 중복 제거
+          .slice(0, 5);
+
+        // [FIX] esc() 적용으로 XSS 방지
+        card.innerHTML = `
+          <div class="card-header">
+            <div class="avatar">${esc((p.name || "?").charAt(0))}</div>
+            <div>
+              <div class="card-name">
+                ${esc(p.name)}
+                ${p.alumni ? '<span class="alumni-badge">이전 재직자</span>' : ""}
+              </div>
+              <div class="card-role">${esc(p.company)} · ${esc(p.role || p.job)}</div>
+            </div>
+            <div class="card-links">
+              <button class="bookmark-btn ${isBookmarked ? "saved" : ""}" data-id="${esc(p.id)}" title="북마크">
+                ${isBookmarked ? "★" : "☆"}
+              </button>
+              <a class="link-btn ${p.remember ? "" : "disabled"}" href="${esc(p.remember || "#")}" target="_blank" rel="noopener noreferrer" title="리멤버 페이지">R</a>
+              <a class="link-btn ${p.linkedin ? "" : "disabled"}" href="${esc(p.linkedin || "#")}" target="_blank" rel="noopener noreferrer" title="링크드인">in</a>
+            </div>
+          </div>
+          <div class="card-divider"></div>
+          <div class="card-info-grid">
+            <div class="info-item">
+              <div class="info-item-label">직무</div>
+              <div class="info-item-value">${esc(p.job) || "-"}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-item-label">팀</div>
+              <div class="info-item-value">${esc(p.team) || "-"}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-item-label">총 경력</div>
+              <div class="info-item-value">${esc(p.total_career) || "-"}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-item-label">재직 기간</div>
+              <div class="info-item-value">${esc(p.tenure) || "-"}</div>
+            </div>
+            <div class="info-item full">
+              <div class="info-item-label">이전 경력</div>
+              <div class="info-item-value">
+                ${prevCompanies.length
+                  ? `<div class="prev-companies">${prevCompanies.map(c => `<span class="company-tag">${esc(c)}</span>`).join("")}</div>`
+                  : (esc(p.prev_career_raw) || "-")}
+              </div>
+            </div>
+            <div class="info-item full">
+              <div class="info-item-label">학력</div>
+              <div class="info-item-value">${esc(p.education) || "-"}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-item-label">Region</div>
+              <div class="info-item-value">${esc(p.region) || "-"}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-item-label">소스 시트</div>
+              <div class="info-item-value">${esc(p.source_sheet) || "-"}</div>
+            </div>
+          </div>
+        `;
+
+        cardsGrid.appendChild(card);
+      });
+
+      cardsGrid.querySelectorAll(".bookmark-btn").forEach((btn) => {
+        btn.addEventListener("click", () => toggleBookmark(btn.dataset.id));
+      });
+
+      renderPagination();
+    }
+
+    function renderPagination() {
+      const totalPages = Math.ceil(filterData.length / PAGESIZE) || 1;
+      paginationEl.innerHTML = "";
+      if (totalPages <= 1) return;
+
+      const addBtn = (label, page, disabled, active = false) => {
+        const btn = document.createElement("button");
+        btn.className = "page-btn" + (active ? " active" : "");
+        btn.textContent = label;
+        if (disabled) {
+          btn.disabled = true;
+        } else {
+          btn.addEventListener("click", () => {
+            currentPage = page;
+            renderCards();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          });
+        }
+        paginationEl.appendChild(btn);
+      };
+
+      addBtn("«", 1, currentPage === 1);
+      addBtn("‹", currentPage - 1, currentPage === 1);
+      const range = 2;
+      const start = Math.max(1, currentPage - range);
+      const end = Math.min(totalPages, currentPage + range);
+      for (let i = start; i <= end; i++) addBtn(String(i), i, false, i === currentPage);
+      addBtn("›", currentPage + 1, currentPage === totalPages);
+      addBtn("»", totalPages, currentPage === totalPages);
+    }
+
+    // ---------- 북마크 ----------
+    function loadBookmarks() {
+      try {
+        const raw = localStorage.getItem("beauty_selection_bookmarks");
+        bookmarks = raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        bookmarks = [];
+      }
+      updateBookmarkUI();
+    }
+
+    function saveBookmarks() {
+      localStorage.setItem("beauty_selection_bookmarks", JSON.stringify(bookmarks));
+      updateBookmarkUI();
+      renderCards();
+      renderBookmarkDrawer();
+    }
+
+    function updateBookmarkUI() {
+      const count = bookmarks.length;
+      bookmarkCountEl.textContent = count + "명";
+      if (count > 0) {
+        headerBookmarkCount.textContent = String(count);
+        headerBookmarkCount.classList.add("visible");
+      } else {
+        headerBookmarkCount.classList.remove("visible");
+      }
+    }
+
+    function toggleBookmark(id) {
+      const idx = bookmarks.indexOf(id);
+      if (idx >= 0) bookmarks.splice(idx, 1);
+      else bookmarks.push(id);
+      saveBookmarks();
+    }
+
+    function renderBookmarkDrawer() {
+      if (!bookmarks.length) {
+        bookmarkListEl.innerHTML = `
+          <div class="bookmark-empty">
+            <div class="empty-icon">📥</div>
+            <div>북마크한 인재가 없습니다.</div>
+          </div>
+        `;
+        return;
+      }
+      const map = {};
+      RAWDATA.forEach((p) => { map[p.id] = p; });
+
+      bookmarkListEl.innerHTML = "";
+      bookmarks.forEach((id) => {
+        const p = map[id];
+        if (!p) return;
+        const item = document.createElement("div");
+        item.className = "bookmark-item";
+        item.innerHTML = `
+          <div class="bk-avatar">${esc((p.name || "?").charAt(0))}</div>
+          <div class="bk-info">
+            <div class="bk-name">${esc(p.name)}</div>
+            <div class="bk-sub">${esc(p.company)} · ${esc(p.role || p.job)}</div>
+          </div>
+          <button class="bk-remove" data-id="${esc(id)}" title="삭제">×</button>
+        `;
+        bookmarkListEl.appendChild(item);
+      });
+
+      bookmarkListEl.querySelectorAll(".bk-remove").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = bookmarks.indexOf(btn.dataset.id);
+          if (idx >= 0) { bookmarks.splice(idx, 1); saveBookmarks(); }
+        });
+      });
+    }
+
+    function openBookmarkDrawer() {
+      bookmarkDrawer.classList.add("open");
+      bookmarkOverlay.classList.add("open");
+      renderBookmarkDrawer();
+    }
+    function closeBookmarkDrawer() {
+      bookmarkDrawer.classList.remove("open");
+      bookmarkOverlay.classList.remove("open");
+    }
+
+    function update() {
+      applyFilters();
+      renderCards();
+    }
+
+    // ---------- 초기화 ----------
+    async function init() {
+      showSkeleton();
+      loadBookmarks();
+
+      try {
+        const res = await fetch(GAS_URL);
+        const json = await res.json();
+
+        RAWDATA = (json || []).map((row, idx) => ({
+          // [FIX] 안정적 ID: source_sheet + 이름 조합 (행 순서 변경에 무관)
+          // 동명이인 방지를 위해 인덱스를 suffix로 추가
+          id: `${row.source_sheet || ""}_${(row.name || "").replace(/\n.*/,"").trim()}_${idx}`,
+          source_sheet:    row.source_sheet    || "",
+          company:         row.company         || "",
+          name:            row.name            || "",
+          remember:        row.remember        || "",
+          linkedin:        row.linkedin        || "",
+          job:             row.job             || "",
+          team:            row.team            || "",
+          role:            row.role            || "",
+          total_career:    row.total_career    || "",
+          tenure:          row.tenure          || "",
+          tenure_start:    row.tenure_start    || "", // [FIX] GAS v1.1에서 파싱 후 반환
+          prev_career_raw: row.prev_career_raw || "",
+          education:       row.education       || "",
+          region:          row.region          || "",
+          alumni:          row.alumni          || false
+        }));
+
+        buildCompanyTabs();
+
+        const companyOptions = [...new Set(RAWDATA.map(p => p.company).filter(Boolean))].sort();
+        const jobOptions     = [...new Set(RAWDATA.map(p => p.job).filter(Boolean))].sort();
+        const teamOptions    = [...new Set(RAWDATA.map(p => p.team).filter(Boolean))].sort();
+        const roleOptions    = [...new Set(RAWDATA.map(p => p.role).filter(Boolean))].sort();
+        // [FIX] Region도 searchable-select로
+        const regionOptions  = [...new Set(RAWDATA.map(p => p.region).filter(Boolean))].sort();
+
+        setupSearchableSelect(companySelect, () => companyOptions, (v) => { selectedCompany = v; }, () => companyBadgeContainer, () => selectedCompany);
+        setupSearchableSelect(jobSelect,     () => jobOptions,     (v) => { selectedJob = v; },     () => jobBadgeContainer,     () => selectedJob);
+        setupSearchableSelect(teamSelect,    () => teamOptions,    (v) => { selectedTeam = v; },    () => teamBadgeContainer,    () => selectedTeam);
+        setupSearchableSelect(roleSelect,    () => roleOptions,    (v) => { selectedRole = v; },    () => roleBadgeContainer,    () => selectedRole);
+        setupSearchableSelect(regionSelect,  () => regionOptions,  (v) => { selectedRegion = v; },  () => regionBadgeContainer,  () => selectedRegion);
+
+        update();
+      } catch (e) {
+        console.error("GAS fetch error", e);
+        cardsGrid.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">⚠️</div>
+            <h3>데이터를 불러오지 못했어요.</h3>
+            <p>GAS Web App URL 또는 권한 설정을 확인해 주세요.</p>
+          </div>
+        `;
+      }
+
+      // [FIX] debounce 적용 (300ms)
+      searchInput.addEventListener("input", debounce(() => { currentPage = 1; update(); }, 300));
+      nameInput.addEventListener("input", debounce(() => { currentPage = 1; update(); }, 300));
+
+      resetBtn.addEventListener("click", () => {
+        searchInput.value = "";
+        nameInput.value = "";
+        selectedCompanyTab = "ALL";
+        selectedCompany = null;
+        selectedJob = null;
+        selectedTeam = null;
+        selectedRole = null;
+        selectedRegion = null;
+        setExcludeIntern(false);
+        document.querySelectorAll(".company-tab").forEach((b) => b.classList.remove("active"));
+        const first = document.querySelector('.company-tab[data-company="ALL"]');
+        if (first) first.classList.add("active");
+        // ss-input 값 초기화
+        [companySelect, jobSelect, teamSelect, roleSelect, regionSelect].forEach(sel => {
+          sel.querySelector(".ss-input").value = "";
+        });
+        companyBadgeContainer.innerHTML = "";
+        jobBadgeContainer.innerHTML = "";
+        teamBadgeContainer.innerHTML = "";
+        roleBadgeContainer.innerHTML = "";
+        regionBadgeContainer.innerHTML = "";
+        currentPage = 1;
+        update();
+      });
+
+      document.querySelectorAll(".sort-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentSort = btn.dataset.sort || "default";
+          currentPage = 1;
+          update();
+        });
+      });
+
+      // [FIX] 인턴 제외 토글 — 단일 상태(excludeIntern) 공유
+      internToggleEl.addEventListener("click", () => {
+        setExcludeIntern(!excludeIntern);
+        currentPage = 1;
+        update();
+      });
+      internSidebarToggleEl.addEventListener("click", () => {
+        setExcludeIntern(!excludeIntern);
+        currentPage = 1;
+        update();
+      });
+
+      headerBookmarkBtn.addEventListener("click", openBookmarkDrawer);
+      bookmarkCloseBtn.addEventListener("click", closeBookmarkDrawer);
+      bookmarkOverlay.addEventListener("click", closeBookmarkDrawer);
+      bookmarkClearBtn.addEventListener("click", () => {
+        if (!bookmarks.length) return;
+        if (!confirm("모든 북마크를 삭제할까요?")) return;
+        bookmarks = [];
+        saveBookmarks();
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
