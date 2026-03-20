@@ -6,3 +6,10 @@ logs/
 node_modules/
 *.session.json
 remember_session.json
+output/
+data/ninehire_uploaded.json
+remember_run.log
+debug_*.png
+*.zip
+__pycache__/
+scripts/__pycache__/
