@@ -762,6 +762,66 @@
       header { padding: 16px 18px; }
       .company-tabs { padding: 8px 16px; top: 64px; }
     }
+
+    /* ── LOGIN OVERLAY ── */
+    .login-overlay {
+      position: fixed; inset: 0;
+      background: rgba(42, 31, 26, 0.55);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px 36px 36px;
+      width: 100%; max-width: 380px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .login-card .login-logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .login-card .login-logo h2 {
+      font-size: 17px; font-weight: 700; color: var(--text);
+    }
+    .login-card .login-logo h2 span { color: var(--accent-deep); }
+    .login-card .login-desc {
+      font-size: 13px; color: var(--text2); margin-top: -8px;
+    }
+    .login-field { display: flex; flex-direction: column; gap: 6px; }
+    .login-field label { font-size: 12px; font-weight: 600; color: var(--text2); }
+    .login-field input {
+      padding: 10px 14px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg);
+      font-size: 14px; color: var(--text); outline: none;
+      font-family: inherit;
+    }
+    .login-field input:focus { border-color: var(--accent-deep); }
+    .login-btn {
+      padding: 12px; border-radius: 12px;
+      background: var(--accent-deep); color: #fff;
+      border: none; font-size: 14px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .login-error {
+      font-size: 13px; color: var(--red);
+      min-height: 18px; text-align: center;
+    }
+
+    /* ── LOGOUT BUTTON ── */
+    .logout-btn {
+      margin-left: 8px;
+      padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text2);
+      font-size: 13px; font-family: inherit; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .logout-btn:hover { background: var(--accent); color: var(--text); }
   </style>
 </head>
 <body>
@@ -773,7 +833,29 @@
       북마크
       <span class="hb-count" id="headerBookmarkCount">0</span>
     </button>
+    <button class="logout-btn" id="logoutBtn">로그아웃</button>
   </header>
+
+  <!-- 로그인 오버레이 -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-mark"></div>
+        <h2>뷰티셀렉션 <span>인재풀</span></h2>
+      </div>
+      <p class="login-desc">접근 권한이 있는 계정으로 로그인하세요.</p>
+      <div class="login-field">
+        <label>이메일</label>
+        <input type="email" id="loginEmail" placeholder="이메일 입력" autocomplete="email" />
+      </div>
+      <div class="login-field">
+        <label>비밀번호</label>
+        <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password" />
+      </div>
+      <p class="login-error" id="loginError"></p>
+      <button class="login-btn" id="loginBtn">로그인</button>
+    </div>
+  </div>
 
   <div class="company-tabs" id="companyTabs"></div>
 
@@ -885,8 +967,48 @@
   </div>
   <div class="bookmark-overlay" id="bookmarkOverlay"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbwtaIB95DTzicZFfP-Qm8HchChF2ibwcX7831ZOAdMNFIAecbm9EkTc9EBY9pLP_cuF5w/exec";
+    const SUPABASE_URL      = "https://gthajfbofpvyrwuhxfah.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0aGFqZmJvZnB2eXJ3dWh4ZmFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzODQ0NjQsImV4cCI6MjA4OTk2MDQ2NH0.MMMlPUDo65Gapmw145ykjv7d1sdpSkWYE6GUbYKdTYs";
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ── AUTH ──────────────────────────────────────────────
+    const loginOverlay = document.getElementById('loginOverlay');
+    const loginBtn     = document.getElementById('loginBtn');
+    const logoutBtn    = document.getElementById('logoutBtn');
+    const loginError   = document.getElementById('loginError');
+
+    function showLogin() { loginOverlay.style.display = 'flex'; }
+    function hideLogin() { loginOverlay.style.display = 'none'; }
+
+    sb.auth.onAuthStateChange((event, session) => {
+      if (session) { hideLogin(); }
+      else { showLogin(); }
+    });
+
+    loginBtn.addEventListener('click', async () => {
+      const email    = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      loginError.textContent = '';
+      loginBtn.disabled = true;
+      loginBtn.textContent = '로그인 중...';
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) {
+        loginError.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+        loginBtn.disabled = false;
+        loginBtn.textContent = '로그인';
+      }
+    });
+
+    document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loginBtn.click();
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+      await sb.auth.signOut();
+    });
+    // ──────────────────────────────────────────────────────
 
     let RAWDATA = [];
     let filterData = [];
@@ -1427,25 +1549,26 @@
       loadBookmarks();
 
       try {
-        const res = await fetch(GAS_URL);
-        const json = await res.json();
+        const { data: json, error } = await sb
+          .from('talent_profiles')
+          .select('*')
+          .order('tenure_start', { ascending: false });
+        if (error) throw error;
 
         RAWDATA = (json || []).map((row, idx) => ({
-          // [FIX] 안정적 ID: source_sheet + 이름 조합 (행 순서 변경에 무관)
-          // 동명이인 방지를 위해 인덱스를 suffix로 추가
           id: `${row.source_sheet || ""}_${(row.name || "").replace(/\n.*/,"").trim()}_${idx}`,
           source_sheet:    row.source_sheet    || "",
           company:         row.company         || "",
           name:            row.name            || "",
-          remember:        row.remember        || "",
-          linkedin:        row.linkedin        || "",
-          job:             row.job             || "",
+          remember:        row.remember_url    || "",
+          linkedin:        row.linkedin_url    || "",
+          job:             row.job_category    || "",
           team:            row.team            || "",
           role:            row.role            || "",
           total_career:    row.total_career    || "",
           tenure:          row.tenure          || "",
-          tenure_start:    row.tenure_start    || "", // [FIX] GAS v1.1에서 파싱 후 반환
-          prev_career_raw: row.prev_career_raw || "",
+          tenure_start:    row.tenure_start    || "",
+          prev_career_raw: row.prev_career     || "",
           education:       row.education       || "",
           region:          row.region          || "",
           alumni:          row.alumni          || false
@@ -1468,12 +1591,12 @@
 
         update();
       } catch (e) {
-        console.error("GAS fetch error", e);
+        console.error("Supabase fetch error", e);
         cardsGrid.innerHTML = `
           <div class="empty">
             <div class="empty-icon">⚠️</div>
             <h3>데이터를 불러오지 못했어요.</h3>
-            <p>GAS Web App URL 또는 권한 설정을 확인해 주세요.</p>
+            <p>Supabase 연결 또는 RLS 정책을 확인해 주세요.</p>
           </div>
         `;
       }
@@ -1541,7 +1664,12 @@
       });
     }
 
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", async () => {
+      // 기존 세션 확인 후 데이터 로드
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) { hideLogin(); await init(); }
+      else { showLogin(); }
+    });
   </script>
 </body>
 </html>

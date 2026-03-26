@@ -1,5 +1,5 @@
 /**
- * [v20.9] 인재풀 엔진
+ * [v21.0] 인재풀 엔진
  * 변경 내역:
  * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
  * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
@@ -25,6 +25,7 @@
  * 21. [REDESIGN v20.9] buildCategoryMappingReport: LinkedIn 출처 행(C열 없고 D열 있는 행)의 G열 직책 고유값 추출
  *     → 기준 행(C열 있는 행)의 F/G 고유값을 드롭다운으로 제공하는 3열 레이아웃
  * 22. [REDESIGN v20.9] applyCategoryMapping: LinkedIn 출처 행만 필터 → F열(팀)+G열(직책) 동시 업데이트
+ * 23. [NEW v21.0] syncCurrentSheetToSupabase: 통합_ 시트 → Supabase talent_profiles 동기화 (수동)
  *
  * ★ 데이터 통합 실행 순서 (반드시 준수):
  *   STEP 1. 🔎 중복 대조 리포트 생성
@@ -56,13 +57,18 @@ const COMPANY_CONFIG = {
   }
 };
 
+// ── Supabase ──────────────────────────────────────────────
+// SERVICE_KEY는 GAS 스크립트 속성에서 관리 (스크립트 편집기 → 프로젝트 설정 → 스크립트 속성)
+// 키 이름: SUPABASE_SERVICE_KEY
+const SUPABASE_URL = "https://gthajfbofpvyrwuhxfah.supabase.co";
+
 const SHEET_DUP_REPORT    = "🔍 중복_대조_리포트";
 const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
 
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v20.9')
+  ui.createMenu('🚀 인재풀 엔진 v21.0')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
@@ -83,6 +89,10 @@ function onOpen() {
     .addSeparator()
     .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
     .addItem('⚪ 리포트 서식 초기화', 'clearAllColors')
+    .addSeparator()
+    .addSubMenu(ui.createMenu('☁️ 4. Supabase 동기화')
+      .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
+      .addItem('📤 모든 통합_ 시트 일괄 업로드', 'syncAllSheetsToSupabase'))
     .addToUi();
 }
 
@@ -945,4 +955,183 @@ function clearAllColors() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s = ss.getSheetByName(SHEET_DUP_REPORT);
   if (s) s.clear();
+}
+
+
+// ==========================================
+// ■ [v21.0] Supabase 동기화
+// ==========================================
+
+/**
+ * 현재 활성화된 통합_ 시트의 데이터를 Supabase talent_profiles 테이블에 동기화.
+ * 실행 전 GAS 스크립트 속성에 SUPABASE_SERVICE_KEY 설정 필요.
+ * (스크립트 편집기 → 프로젝트 설정 → 스크립트 속성 → 추가)
+ */
+function syncCurrentSheetToSupabase() {
+  const ui = SpreadsheetApp.getUi();
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const sheetName = sheet.getName();
+
+  if (!sheetName.startsWith("통합_")) {
+    ui.alert("⚠️ 통합_ 시트를 활성화한 뒤 실행하세요.\n현재 시트: " + sheetName);
+    return;
+  }
+
+  const serviceKey = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+  if (!serviceKey) {
+    ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다.\n\n스크립트 편집기 → 프로젝트 설정 → 스크립트 속성에서 추가하세요.");
+    return;
+  }
+
+  const headers = {
+    'apikey': serviceKey,
+    'Authorization': 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
+
+  // 1. 기존 데이터 삭제 (해당 source_sheet만)
+  const deleteRes = UrlFetchApp.fetch(
+    SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
+    { method: 'delete', headers: headers, muteHttpExceptions: true }
+  );
+  if (deleteRes.getResponseCode() >= 300) {
+    ui.alert('❌ 삭제 오류:\n' + deleteRes.getContentText());
+    return;
+  }
+
+  // 2. 시트 데이터 추출
+  const rows = _extractSheetForSupabase(sheet, sheetName);
+  if (rows.length === 0) {
+    ui.alert('동기화할 데이터가 없습니다. (이름 열이 비어 있음)');
+    return;
+  }
+
+  // 3. Supabase INSERT (500건씩 배치)
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const insertRes = UrlFetchApp.fetch(
+      SUPABASE_URL + '/rest/v1/talent_profiles',
+      { method: 'post', headers: headers, payload: JSON.stringify(batch), muteHttpExceptions: true }
+    );
+    if (insertRes.getResponseCode() >= 300) {
+      ui.alert('❌ 삽입 오류 (배치 ' + (i / BATCH_SIZE + 1) + '):\n' + insertRes.getContentText());
+      return;
+    }
+  }
+
+  ui.alert('✅ Supabase 동기화 완료\n시트: ' + sheetName + '\n총 ' + rows.length + '건 업로드');
+}
+
+function syncAllSheetsToSupabase() {
+  const ui = SpreadsheetApp.getUi();
+  const serviceKey = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+  if (!serviceKey) {
+    ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다.\n\n스크립트 편집기 → 프로젝트 설정 → 스크립트 속성에서 추가하세요.");
+    return;
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const targetSheets = ss.getSheets().filter(s => s.getName().startsWith("통합_"));
+
+  if (targetSheets.length === 0) {
+    ui.alert("통합_ 시트가 없습니다.");
+    return;
+  }
+
+  const headers = {
+    'apikey': serviceKey,
+    'Authorization': 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
+
+  const results = [];
+  for (const sheet of targetSheets) {
+    const sheetName = sheet.getName();
+
+    // 기존 데이터 삭제
+    const deleteRes = UrlFetchApp.fetch(
+      SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
+      { method: 'delete', headers: headers, muteHttpExceptions: true }
+    );
+    if (deleteRes.getResponseCode() >= 300) {
+      results.push('❌ ' + sheetName + ' 삭제 오류: ' + deleteRes.getContentText());
+      continue;
+    }
+
+    // 데이터 추출
+    const rows = _extractSheetForSupabase(sheet, sheetName);
+    if (rows.length === 0) {
+      results.push('⚠️ ' + sheetName + ': 데이터 없음 (건너뜀)');
+      continue;
+    }
+
+    // INSERT (500건 배치)
+    let failed = false;
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const insertRes = UrlFetchApp.fetch(
+        SUPABASE_URL + '/rest/v1/talent_profiles',
+        { method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + BATCH_SIZE)), muteHttpExceptions: true }
+      );
+      if (insertRes.getResponseCode() >= 300) {
+        results.push('❌ ' + sheetName + ' 삽입 오류: ' + insertRes.getContentText());
+        failed = true;
+        break;
+      }
+    }
+    if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건');
+  }
+
+  ui.alert('☁️ Supabase 일괄 동기화 완료\n\n' + results.join('\n'));
+}
+
+function _extractSheetForSupabase(sheet, sheetName) {
+  const tMap = getColMap(sheet);
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+  const richTextValues = range.getRichTextValues();
+  const rows = [];
+  const now = new Date().toISOString();
+
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const name = (r[tMap["이름"]] || "").toString().trim();
+    if (!name) continue;
+
+    const tenureStr = (r[tMap["재직 기간"]] || "").toString().trim();
+    const tenureStartMatch = tenureStr.match(/(\d{4}\.\d{2})/);
+
+    rows.push({
+      source_sheet:  sheetName,
+      company:       (r[tMap["회사명"]]       || "").toString().trim(),
+      name:          name,
+      remember_url:  _extractRichUrl(richTextValues[i][tMap["리멤버 페이지"]]),
+      linkedin_url:  _extractRichUrl(richTextValues[i][tMap["링크드인 페이지"]]),
+      job_category:  (r[tMap["대분류(직무)"]] || "").toString().trim(),
+      team:          (r[tMap["팀"]]            || "").toString().trim(),
+      role:          (r[tMap["직책"]]          || "").toString().trim(),
+      total_career:  (r[tMap["총 경력"]]       || "").toString().trim(),
+      tenure:        tenureStr,
+      tenure_start:  tenureStartMatch ? tenureStartMatch[1] : "",
+      prev_career:   (r[tMap["이전 경력"]]    || "").toString().trim(),
+      education:     (r[tMap["학력"]]          || "").toString().trim(),
+      region:        (r[tMap["Region"]]        || "").toString().trim(),
+      synced_at:     now
+    });
+  }
+  return rows;
+}
+
+function _extractRichUrl(richTextValue) {
+  if (!richTextValue) return "";
+  const main = richTextValue.getLinkUrl();
+  if (main) return main;
+  for (const run of richTextValue.getRuns()) {
+    const link = run.getLinkUrl();
+    if (link) return link;
+  }
+  return "";
 }
