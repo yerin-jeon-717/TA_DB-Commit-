@@ -1,15 +1,17 @@
 /**
- * [v22.9-patch] 인재풀 엔진
+ * [v23.0] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
  * 4. [⚙️설정] 6컬럼 설정 시트 (URL → ID 자동 추출)
- * 5. [PATCH] isExcludedCompany 재추가 (삭제로 인한 오류 복구)
- * 6. [PATCH] getKeywordsForCompany 재추가 (삭제로 인한 오류 복구)
- * 7. [PATCH] runDuplicateScan RichText null 체크 추가
- * 8. [PATCH] getOrSelectCompany 설정 시트 없을 때 throw → null 반환으로 변경
+ * 5. [PATCH] isExcludedCompany 팝업 제거 — 설정 시트에서 모든 제외 키워드 합산
+ * 6. [PATCH] getKeywordsForCompany 재추가
+ * 7. [PATCH] runDuplicateScan RichText null 체크
+ * 8. [PATCH] getOrSelectCompany throw → null 반환
  * 9. [PATCH] standardizeLineFinal 기간 단독 역산 로직 복구
  * 10. [PATCH] Supabase 동기화 함수 복구 + 메뉴 추가
+ * 11. [Update] runRegionMapping 권역 확장 (동남아/중동/남미/CIS/호주/유럽/중국), 해외 키워드 추가
+ * 12. [v23.0] 중복대조/병합 함수 ScriptProperties 의존 제거 → 실행 시마다 시트 직접 선택
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -18,14 +20,13 @@ const SHEET_DUP_REPORT   = "🔍 중복 대조 리포트";
 const SHEET_CATEGORY_MAP = "📋 카테고리 매핑 리포트";
 const SUPABASE_URL       = "https://gthajfbofpvyrwuhxfah.supabase.co";
 
-// [PATCH] isExcludedCompany / getKeywordsForCompany 캐시
 let _cfgCache    = undefined;
 let _allCfgCache = undefined;
 
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v22.9')
+  ui.createMenu('🚀 인재풀 엔진 v23.0')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -41,11 +42,11 @@ function onOpen() {
       .addItem('🔀 링크드인 잔여 데이터 → 통합 시트에 합치기', 'mergeLinkedinIntoRemember'))
     .addSeparator()
     .addSubMenu(ui.createMenu('🏷️ 3. 팀/직책 카테고리 정규화')
+      .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
       .addItem('🏗️ 매핑 리포트 생성 (인재별 검토)', 'buildCategoryMappingReport')
       .addItem('✅ 매핑 결과 일괄 반영 및 초기화', 'applyCategoryMapping'))
     .addSeparator()
-    .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
-    .addItem('⚪ 리포트 서식 초기화', 'clearAllColors')
+    .addItem('⏪ 리포트 서식 초기화', 'clearAllColors')
     .addSeparator()
     .addItem('⚙️ 엔진 설정 시트 초기화/생성', 'setupSettingSheet')
     .addSeparator()
@@ -53,6 +54,23 @@ function onOpen() {
       .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
       .addItem('📤 모든 통합_ 시트 일괄 업로드', 'syncAllSheetsToSupabase'))
     .addToUi();
+}
+
+// ── [공통] 시트 선택 팝업 ──────────────────────
+// filterFn: 시트 목록 필터 함수 (없으면 전체 표시)
+// 1개뿐이면 자동 선택, 0개면 null 반환
+
+function _pickSheet(title, filterFn) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const sheets = ss.getSheets().filter(filterFn || (() => true));
+  if (sheets.length === 0) { ui.alert(`❌ 선택 가능한 시트가 없습니다.\n(${title})`); return null; }
+  if (sheets.length === 1) return sheets[0];
+  const list = sheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
+  const res = ui.prompt(title, list, ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return null;
+  const idx = parseInt(res.getResponseText().trim()) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= sheets.length) { ui.alert('❌ 올바른 번호를 입력하세요.'); return null; }
+  return sheets[idx];
 }
 
 // ── [1. 데이터 준비] 수입 ──────────────────────
@@ -87,9 +105,6 @@ function _importDataFlowFinal(type) {
     const newName = `${(type === 'linkedin' ? 'linkedin' : 'Remember')}_${selectedSheet.getName()}_${ts}`;
     const target = ss.insertSheet(newName);
 
-    PropertiesService.getScriptProperties().setProperty(
-      (type === 'linkedin' ? `sheet2Name_${cfg.name}` : `sheet1Name_${cfg.name}`), newName
-    );
     target.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
 
     const results = (type === 'linkedin')
@@ -186,9 +201,7 @@ function buildCategoryMappingReport() {
     if (dvR) rep.getRange(r, 7).setDataValidation(dvR).setBackground("#fff2cc");
   });
 
-  // 원본 시트명 저장 (applyCategoryMapping에서 사용)
   PropertiesService.getScriptProperties().setProperty('categoryMapSourceSheet', sheet.getName());
-
   rep.hideColumns(1);
   rep.autoResizeColumns(2, 7);
   rep.activate();
@@ -199,7 +212,6 @@ function applyCategoryMapping() {
   const rep = ss.getSheetByName(SHEET_CATEGORY_MAP);
   if (!rep || rep.getLastRow() < 2) return ui.alert("매핑 리포트가 없습니다.");
 
-  // [FIX] getActiveSheet() 대신 리포트 생성 시 저장한 원본 시트명으로 찾기
   const sourceName = PropertiesService.getScriptProperties().getProperty('categoryMapSourceSheet');
   const main = sourceName ? ss.getSheetByName(sourceName) : null;
   if (!main) return ui.alert("원본 시트를 찾을 수 없습니다.\n매핑 리포트를 다시 생성해주세요.");
@@ -208,11 +220,11 @@ function applyCategoryMapping() {
   let count = 0;
 
   for (let i = 1; i < data.length; i++) {
-    const rowIdx    = data[i][0];
+    const rowIdx     = data[i][0];
     const editedRole = String(data[i][4] || "").trim();
-    const selTeam   = String(data[i][5] || "").trim();
-    const selRole   = String(data[i][6] || "").trim();
-    const roleCell  = main.getRange(rowIdx, tMap["직책"] + 1);
+    const selTeam    = String(data[i][5] || "").trim();
+    const selRole    = String(data[i][6] || "").trim();
+    const roleCell   = main.getRange(rowIdx, tMap["직책"] + 1);
 
     if (selTeam) main.getRange(rowIdx, tMap["팀"] + 1).setValue(selTeam);
 
@@ -257,14 +269,13 @@ function onEdit(e) {
   }
 }
 
-// ── [PATCH] getOrSelectCompany — throw → null 반환 ──
+// ── getOrSelectCompany ────────────────────────
 
 function getOrSelectCompany() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const activeName = ss.getActiveSheet().getName();
   const setSheet = ss.getSheetByName(SETTING_SHEET_NAME);
 
-  // [PATCH] throw 대신 alert + null 반환
   if (!setSheet) {
     SpreadsheetApp.getUi().alert('⚠️ 설정 시트가 없습니다.\n메뉴 → "⚙️ 엔진 설정 시트 초기화/생성"을 먼저 실행하세요.');
     return null;
@@ -301,16 +312,10 @@ function getOrSelectCompany() {
     matched = names[idx];
   }
 
-  const p = PropertiesService.getScriptProperties();
-  const cfg = { name: matched, ...config[matched] };
-  cfg.sheet1Name = p.getProperty(`sheet1Name_${matched}`) || "";
-  cfg.sheet2Name = p.getProperty(`sheet2Name_${matched}`) || "";
-
-  // 캐시 초기화 (회사 변경 시 isExcludedCompany 재계산)
   _cfgCache    = undefined;
   _allCfgCache = undefined;
 
-  return cfg;
+  return { name: matched, ...config[matched] };
 }
 
 function getColMap(s) {
@@ -319,7 +324,7 @@ function getColMap(s) {
   return m;
 }
 
-// ── [PATCH] 누락 함수 복구: getKeywordsForCompany ──
+// ── getKeywordsForCompany ─────────────────────
 
 function getKeywordsForCompany(companyName) {
   if (!companyName) return [];
@@ -351,8 +356,7 @@ function getKeywordsForCompany(companyName) {
   return configKey ? _allCfgCache[configKey] : [name];
 }
 
-// ── [PATCH] 누락 함수 복구: isExcludedCompany ──
-// 팝업 없이 설정 시트에서 모든 회사의 제외 키워드를 합산해서 체크
+// ── isExcludedCompany (팝업 없이 설정 시트 전체 키워드 합산) ──
 
 function isExcludedCompany(text) {
   if (_cfgCache === undefined) {
@@ -363,7 +367,7 @@ function isExcludedCompany(text) {
         const data = setSheet.getDataRange().getValues();
         const allKw = [];
         for (let i = 1; i < data.length; i++) {
-          const kw = data[i][5]; // F열 = 제외 키워드
+          const kw = data[i][5];
           if (kw) kw.toString().split(',').map(x => x.trim()).filter(x => x).forEach(k => allKw.push(k));
         }
         _cfgCache = { excludeKeywords: allKw };
@@ -405,13 +409,11 @@ function unifyFormatLinkedinToRemember() {
   } catch (e) { SpreadsheetApp.getUi().alert("오류: " + e.message); }
 }
 
-// [PATCH] 기간 단독 역산 로직 복구
 function standardizeLineFinal(line, isCurrentJob) {
   if (!line || line.trim() === "" || line === "-") return "";
   line = normalizeEngDateAndDuration(line.trim())
     .replace(/(\d{4})년\s*(\d{1,2})월/g, (m, p1, p2) => p1 + "." + p2.padStart(2, '0'));
 
-  // [PATCH] 기간 단독 형식 역산 ("3년 2개월" → "2023.01 ~ 현재 (3년 2개월)")
   const durationOnlyRegex = /^(\d+년\s*\d+개월|\d+년|\d+개월)$/;
   if (durationOnlyRegex.test(line.trim())) {
     const yM = line.match(/(\d+)년/), mM = line.match(/(\d+)개월/);
@@ -446,9 +448,11 @@ function standardizeLineFinal(line, isCurrentJob) {
 
 function runDuplicateScan() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
-  const cfg = getOrSelectCompany(); if (!cfg) return;
-  const s1 = ss.getSheetByName(cfg.sheet1Name), s2 = ss.getSheetByName(cfg.sheet2Name);
-  if (!s1 || !s2) return ui.alert(`❌ 시트 없음 (${cfg.sheet1Name} / ${cfg.sheet2Name})`);
+
+  const s1 = _pickSheet('📋 리멤버 시트 선택', s => s.getName().startsWith('Remember_'));
+  if (!s1) return;
+  const s2 = _pickSheet('📋 링크드인 시트 선택', s => s.getName().startsWith('linkedin_'));
+  if (!s2) return;
 
   const d1 = s1.getDataRange().getValues(), d2 = s2.getDataRange().getValues();
   const h1 = d1[0], h2 = d2[0];
@@ -461,7 +465,6 @@ function runDuplicateScan() {
   const rt2C = lastRow2 > 0 ? s2.getRange(2, idx2.r + 1, lastRow2, 1).getRichTextValues() : [];
   const rt2D = lastRow2 > 0 ? s2.getRange(2, idx2.l + 1, lastRow2, 1).getRichTextValues() : [];
 
-  // [PATCH] null 체크 추가
   const getUrl = (rtArr, rowIdx) => {
     const rt = rtArr[rowIdx] && rtArr[rowIdx][0];
     return rt ? (rt.getLinkUrl() || '') : '';
@@ -486,6 +489,11 @@ function runDuplicateScan() {
       });
     }
   }
+
+  // applyDuplicateSelections에서 같은 시트 재사용
+  const p = PropertiesService.getScriptProperties();
+  p.setProperty('_dupScan_s1', s1.getName());
+  p.setProperty('_dupScan_s2', s2.getName());
 
   let rep = ss.getSheetByName(SHEET_DUP_REPORT) || ss.insertSheet(SHEET_DUP_REPORT);
   rep.clear();
@@ -516,9 +524,15 @@ function runDuplicateScan() {
 function applyDuplicateSelections() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
   const repS = ss.getSheetByName(SHEET_DUP_REPORT);
-  const cfg  = getOrSelectCompany(); if (!cfg) return;
-  const tarS = ss.getSheetByName(cfg.sheet1Name), newS = ss.getSheetByName(cfg.sheet2Name);
-  if (!repS || !tarS || !newS) return ui.alert('❌ 필요한 시트가 없습니다.');
+  if (!repS || repS.getLastRow() < 2) return ui.alert('❌ 중복 대조 리포트가 없습니다. 먼저 리포트를 생성하세요.');
+
+  // 직전 runDuplicateScan에서 저장한 시트명 우선 사용, 없으면 선택 팝업
+  const p = PropertiesService.getScriptProperties();
+  const saved1 = p.getProperty('_dupScan_s1'), saved2 = p.getProperty('_dupScan_s2');
+  const tarS = (saved1 && ss.getSheetByName(saved1)) || _pickSheet('📋 리멤버 시트 선택 (병합 대상)', s => s.getName().startsWith('Remember_'));
+  if (!tarS) return;
+  const newS = (saved2 && ss.getSheetByName(saved2)) || _pickSheet('📋 링크드인 시트 선택 (삭제 대상)', s => s.getName().startsWith('linkedin_'));
+  if (!newS) return;
 
   const rData = repS.getDataRange().getValues();
   const t1 = getColMap(tarS), t2 = getColMap(newS);
@@ -551,15 +565,17 @@ function applyDuplicateSelections() {
 
 function mergeLinkedinIntoRemember() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
-  const cfg = getOrSelectCompany(); if (!cfg) return;
-  const remS = ss.getSheetByName(cfg.sheet1Name), liS = ss.getSheetByName(cfg.sheet2Name);
-  if (!remS || !liS) return ui.alert('❌ 시트가 없습니다.');
 
   const repSheet = ss.getSheetByName(SHEET_DUP_REPORT);
   if (repSheet && repSheet.getLastRow() > 1) {
     const res = ui.alert('⚠️ 중복 리포트 미처리', '처리되지 않은 중복 데이터가 있습니다. 그래도 진행하시겠습니까?', ui.ButtonSet.YES_NO);
     if (res !== ui.Button.YES) return;
   }
+
+  const remS = _pickSheet('📋 리멤버 시트 선택 (합칠 대상)', s => s.getName().startsWith('Remember_'));
+  if (!remS) return;
+  const liS = _pickSheet('📋 링크드인 시트 선택 (병합 후 숨김)', s => s.getName().startsWith('linkedin_'));
+  if (!liS) return;
 
   const liData = liS.getDataRange().getValues().slice(1);
   if (liData.length === 0) return ui.alert('링크드인 시트에 남은 데이터가 없습니다.');
@@ -674,15 +690,15 @@ function runRegionMapping() {
     [
       {r:"북미",  k:["북미","us ","usa","미국","틱톡샵","north america","northamerica"]},
       {r:"일본",  k:["일본","japan","jp "]},
-      {r:"한국",  k:["한국","korea","kr "]},
-      {r:"SEA",   k:["sea","동남아","southeast asia","싱가포르","베트남","태국","인도네시아","말레이시아","필리핀","singapore","vietnam","thailand","indonesia","malaysia"]},
-      {r:"MENA",  k:["mena","중동","두바이","uae","사우디","middle east","north africa"]},
-      {r:"LATAM", k:["latam","중남미","라틴아메리카","latin america","브라질","멕시코","brazil","mexico"]},
+      {r:"한국",  k:["한국","국내","korea","kr "]},
+      {r:"동남아", k:["sea","동남아","southeast asia","싱가포르","베트남","태국","인도네시아","말레이시아","필리핀","singapore","vietnam","thailand","indonesia","malaysia"]},
+      {r:"중동",  k:["mena","중동","두바이","uae","사우디","middle east","north africa"]},
+      {r:"남미",  k:["latam","중남미","라틴아메리카","latin america","브라질","멕시코","brazil","mexico"]},
       {r:"CIS",   k:["cis","러시아","카자흐스탄","russia","kazakhstan","중앙아시아"]},
       {r:"호주",  k:["호주","australia","aus","오세아니아","oceania"]},
       {r:"유럽",  k:["유럽","europe","eu ","영국","독일","프랑스","uk ","germany","france"]},
       {r:"중국",  k:["중국","china","cn ","차이나"]},
-      {r:"글로벌",k:["글로벌","global"]}
+      {r:"글로벌",k:["글로벌","global","해외"]}
     ].forEach(rule => { if (rule.k.some(kw => c.includes(kw))) m.push(rule.r); });
     return [m.length > 0 ? [...new Set(m.filter(x => x !== "글로벌"))].join("|") || "글로벌" : "NA"];
   });
