@@ -1,94 +1,53 @@
 /**
- * [v21.0] 인재풀 엔진
- * 변경 내역:
- * 1. [BUG FIX] extractNonAprCompanies: 구분자 | 와 ' - ' 모두 처리
- * 2. [BUG FIX] runDuplicateScan: 입사년월 Gate 방식 도입
- * 3. [UX] 리포트 체크박스 + 처리구분 + 입사년월 + 프로필 링크 컬럼 추가
- * 4. [FIX] applyDuplicateSelections: 이름·링크드인URL 이식, 직책 메모 추가, 리포트 초기화
- * 5. [NEW] mergeLinkedinIntoRemember: 링크드인 잔여 데이터 → 리멤버 시트에 append
- * 6. [NEW] buildCategoryMappingReport: F/G열 고유값 → 카테고리 매핑 시트 생성
- * 7. [NEW] applyCategoryMapping: 매핑 시트 기반 F/G열 일괄 업데이트
- * 8. [BUG FIX v20.3] applyDuplicateSelections: D열 링크드인 URL 이식 — getLinkUrl() null 시 텍스트 fallback 추가
- * 9. [GUARD v20.3] mergeLinkedinIntoRemember: 중복 리포트 미처리 시 경고 팝업 추가
- * 10. [UX v20.4] buildCategoryMappingReport: 표준 카테고리 열에 팀/직책 분리 드롭다운 추가
- * 11. [REFACTOR v20.6] buildCategoryMappingReport: CATEGORY_RULES/autoDetectCategory 제거, 팀/직책 병렬 6열 레이아웃으로 변경
- * 12. [FIX v20.6] importLinkedInData/importRememberData: 타임스탬프 기반 새 시트 생성, 기존 시트 덮어쓰기 방지
- * 13. [NEW v20.7] normalizeEngDateAndDuration: 영문 날짜(Feb 2021→2021.02)/기간(1 yr 8 mos→1년 8개월)/Present→현재 정규화
- * 14. [FIX v20.7] standardizeLineFinal: 영문 날짜·기간 전처리 추가
- * 15. [REFACTOR v20.7] unifyFormatLinkedinToRemember: Recovery/Migration 통합 (이전 경력 현 회사 라인 → 재직 기간 이식)
- * 16. [NEW v20.7] COMPANY_CONFIG 비나우 추가
- * 17. [PERF v20.7] isExcludedCompany: _cfgCache로 PropertiesService 반복 호출 방지
- * 18. [FIX v20.8] calcDurationBetween: 0년/0개월 생략 (3개월, 2년 형식)
- * 19. [FIX v20.8] standardizeLineFinal: 이전 경력 info 구분자 ' - ' → ' | ' 변환
- * 20. [FIX v20.8] unifyFormatLinkedinToRemember: A열 회사명 기준 행별 키워드 파생 (getKeywordsForCompany)
- *     → COMPANY_CONFIG 등록 회사는 excludeKeywords 사용, 미등록 회사는 A열 값 자체를 키워드로
- * 21. [REDESIGN v20.9] buildCategoryMappingReport: LinkedIn 출처 행(C열 없고 D열 있는 행)의 G열 직책 고유값 추출
- *     → 기준 행(C열 있는 행)의 F/G 고유값을 드롭다운으로 제공하는 3열 레이아웃
- * 22. [REDESIGN v20.9] applyCategoryMapping: LinkedIn 출처 행만 필터 → F열(팀)+G열(직책) 동시 업데이트
- * 23. [NEW v21.0] syncCurrentSheetToSupabase: 통합_ 시트 → Supabase talent_profiles 동기화 (수동)
- *
- * ★ 데이터 통합 실행 순서 (반드시 준수):
- *   STEP 1. 🔎 중복 대조 리포트 생성
- *   STEP 2. 🔗 선택 중복 병합/삭제 실행  ← 이 단계 생략 시 STEP 3에서 경고 팝업 발생
- *   STEP 3. 🔀 링크드인 잔여 데이터 → 리멤버 시트에 합치기
+ * [v22.9-patch] 인재풀 엔진
+ * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
+ * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
+ * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
+ * 4. [⚙️설정] 6컬럼 설정 시트 (URL → ID 자동 추출)
+ * 5. [PATCH] isExcludedCompany 재추가 (삭제로 인한 오류 복구)
+ * 6. [PATCH] getKeywordsForCompany 재추가 (삭제로 인한 오류 복구)
+ * 7. [PATCH] runDuplicateScan RichText null 체크 추가
+ * 8. [PATCH] getOrSelectCompany 설정 시트 없을 때 throw → null 반환으로 변경
+ * 9. [PATCH] standardizeLineFinal 기간 단독 역산 로직 복구
+ * 10. [PATCH] Supabase 동기화 함수 복구 + 메뉴 추가
  */
 
-const COMPANY_CONFIG = {
-  "더파운더즈": {
-    linkedinSourceId : "1-ZalK4uhxz3uq4RyAMkqHrHkYrkFTNM27G6IswVnj8I",
-    rememberSourceId  : "1R-uwGSBBgsMDYUJiZaHUD-Uh9V-Q3xdCkFuGnT7146o",
-    sheet1Name: 'Remember_더파운더즈',
-    sheet2Name: 'linkedin_더파운더즈',
-    excludeKeywords  : ["더파운더즈", "founders"]
-  },
-  "APR": {
-    linkedinSourceId : "1-ZalK4uhxz3uq4RyAMkqHrHkYrkFTNM27G6IswVnj8I",
-    rememberSourceId  : "1R-uwGSBBgsMDYUJiZaHUD-Uh9V-Q3xdCkFuGnT7146o",
-    sheet1Name: 'Remember_APR',
-    sheet2Name: 'linkedin_APR',
-    excludeKeywords  : ["APR", "에이피알", "aprilskin", "medicube", "에이피알커뮤니케이션즈"]
-  },
-  "비나우": {
-    linkedinSourceId : "",
-    rememberSourceId  : "",
-    sheet1Name: 'Remember_비나우',
-    sheet2Name: 'linkedin_비나우',
-    excludeKeywords  : ["비나우", "benow"]
-  }
-};
+// ── 전역 상수 ──────────────────────────────────
+const SETTING_SHEET_NAME = "⚙️_엔진설정";
+const SHEET_DUP_REPORT   = "🔍 중복 대조 리포트";
+const SHEET_CATEGORY_MAP = "📋 카테고리 매핑 리포트";
+const SUPABASE_URL       = "https://gthajfbofpvyrwuhxfah.supabase.co";
 
-// ── Supabase ──────────────────────────────────────────────
-// SERVICE_KEY는 GAS 스크립트 속성에서 관리 (스크립트 편집기 → 프로젝트 설정 → 스크립트 속성)
-// 키 이름: SUPABASE_SERVICE_KEY
-const SUPABASE_URL = "https://gthajfbofpvyrwuhxfah.supabase.co";
+// [PATCH] isExcludedCompany / getKeywordsForCompany 캐시
+let _cfgCache    = undefined;
+let _allCfgCache = undefined;
 
-const SHEET_DUP_REPORT    = "🔍 중복_대조_리포트";
-const SHEET_CATEGORY_MAP  = "📋 카테고리 매핑 리포트";
-
-
+// ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v21.0')
+  ui.createMenu('🚀 인재풀 엔진 v22.9')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
-      .addItem('📥 링크드인 데이터 가져오기 (현재 시트)', 'importLinkedInData')
-      .addItem('📥 리멤버 데이터 가져오기 (현재 시트)', 'importRememberData')
+      .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
+      .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
       .addSeparator()
-      .addItem('🔤 이름 열 국문 번역(자동)', 'translateNameColumn')
-      .addItem('🧹 포맷 통일(링크드인 > 리멤버)', 'unifyFormatLinkedinToRemember')
+      .addItem('🔤 이름 열 국문 번역(B열 기준)', 'translateNameColumn')
+      .addItem('🧹 포맷 통일(데이터 복구 포함)', 'unifyFormatLinkedinToRemember')
       .addItem('🚀 총 경력 합산 업데이트', 'updateCurrentSheetCareer'))
     .addSeparator()
     .addSubMenu(ui.createMenu('📂 2. 데이터 통합 (중복/매핑)')
-      .addItem('🔎 중복 대조 리포트 생성 (Gate 방식)', 'runDuplicateScan')
+      .addItem('🔎 중복 대조 리포트 생성', 'runDuplicateScan')
       .addItem('🔗 선택 중복 병합/삭제 실행', 'applyDuplicateSelections')
       .addSeparator()
-      .addItem('🔀 링크드인 잔여 데이터 → 리멤버 시트에 합치기', 'mergeLinkedinIntoRemember'))
+      .addItem('🔀 링크드인 잔여 데이터 → 통합 시트에 합치기', 'mergeLinkedinIntoRemember'))
     .addSeparator()
     .addSubMenu(ui.createMenu('🏷️ 3. 팀/직책 카테고리 정규화')
-      .addItem('📋 카테고리 매핑 시트 생성 (선택 회사 기준)', 'buildCategoryMappingReport')
-      .addItem('✅ 카테고리 매핑 적용 (선택 회사 시트)', 'applyCategoryMapping'))
+      .addItem('🏗️ 매핑 리포트 생성 (인재별 검토)', 'buildCategoryMappingReport')
+      .addItem('✅ 매핑 결과 일괄 반영 및 초기화', 'applyCategoryMapping'))
     .addSeparator()
     .addItem('🌏 Region 자동 매핑 실행', 'runRegionMapping')
     .addItem('⚪ 리포트 서식 초기화', 'clearAllColors')
+    .addSeparator()
+    .addItem('⚙️ 엔진 설정 시트 초기화/생성', 'setupSettingSheet')
     .addSeparator()
     .addSubMenu(ui.createMenu('☁️ 4. Supabase 동기화')
       .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
@@ -96,138 +55,386 @@ function onOpen() {
     .addToUi();
 }
 
-// ==========================================
-// ■ [v20.7] 영문 날짜·기간 정규화
-// ==========================================
-function normalizeEngDateAndDuration(line) {
-  // 영문 기간: "1 yr 8 mos" / "4 yrs 6 mos" / "2 yrs" / "6 mos"
-  line = line.replace(/(\d+)\s+yrs?\s+(\d+)\s+mos?/gi, (_, y, m) => `${y}년 ${m}개월`);
-  line = line.replace(/(\d+)\s+yrs?/gi, '$1년');
-  line = line.replace(/(\d+)\s+mos?/gi, '$1개월');
+// ── [1. 데이터 준비] 수입 ──────────────────────
 
-  // 영문 월 이름 → YYYY.MM ("Feb 2021" → "2021.02")
-  const M = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
-             jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-  line = line.replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/gi,
-    (_, mon, yr) => `${yr}.${M[mon.toLowerCase()]}`);
+function importLinkedInData() { _importDataFlowFinal('linkedin'); }
+function importRememberData()  { _importDataFlowFinal('remember'); }
 
-  // Present → 현재
-  line = line.replace(/\bPresent\b/gi, '현재');
+function _importDataFlowFinal(type) {
+  const ui = SpreadsheetApp.getUi(), ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = getOrSelectCompany(); if (!cfg) return;
+  const sourceId = (type === 'linkedin') ? cfg.linkedinSourceId : cfg.rememberSourceId;
+  if (!sourceId) return ui.alert(`❌ '${cfg.name}'의 원본 ID가 없습니다. 설정 시트를 확인하세요.`);
 
-  return line;
+  try {
+    const sourceSs  = SpreadsheetApp.openById(sourceId);
+    const allSheets = sourceSs.getSheets();
+    const dataSheets = (type === 'linkedin') ? allSheets.slice(4) : allSheets.slice(5);
+    if (dataSheets.length === 0) return ui.alert("대상 범위에 시트가 없습니다.");
+
+    const sheetList = dataSheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
+    const res = ui.prompt(`📥 ${type.toUpperCase()} 데이터 수입`, `번호를 입력하세요:\n\n${sheetList}`, ui.ButtonSet.OK_CANCEL);
+    if (res.getSelectedButton() !== ui.Button.OK) return;
+
+    const selIdx = parseInt(res.getResponseText().trim()) - 1;
+    if (isNaN(selIdx) || selIdx < 0 || selIdx >= dataSheets.length) return ui.alert("올바른 번호를 입력하세요.");
+    const selectedSheet = dataSheets[selIdx];
+    const sData = selectedSheet.getDataRange().getValues().slice(1);
+    const linkCol = (type === 'linkedin') ? 10 : 2;
+    const sRTs = selectedSheet.getRange(2, linkCol, sData.length, 1).getRichTextValues();
+
+    const ts = Utilities.formatDate(new Date(), "GMT+9", "yyyyMMdd_HHmm");
+    const newName = `${(type === 'linkedin' ? 'linkedin' : 'Remember')}_${selectedSheet.getName()}_${ts}`;
+    const target = ss.insertSheet(newName);
+
+    PropertiesService.getScriptProperties().setProperty(
+      (type === 'linkedin' ? `sheet2Name_${cfg.name}` : `sheet1Name_${cfg.name}`), newName
+    );
+    target.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
+
+    const results = (type === 'linkedin')
+      ? sData.map(r => [selectedSheet.getName(), r[0], "", "linkedin", "", "", r[1], "", r[2], r[4], r[3], r[10]])
+      : sData.map(r => [selectedSheet.getName(), r[0], "link", "", "", r[2], r[3], "", r[4], r[5], r[6], r[7]]);
+
+    target.getRange(2, 1, results.length, 12).setValues(results);
+    const links = sRTs.map(r => {
+      const url = r[0] ? (r[0].getLinkUrl() || "") : "";
+      return [SpreadsheetApp.newRichTextValue().setText(type === 'linkedin' ? 'linkedin' : 'link').setLinkUrl(url).build()];
+    });
+    target.getRange(2, (type === 'linkedin' ? 4 : 3), links.length, 1).setRichTextValues(links);
+    target.autoResizeColumns(1, 12);
+    ui.alert(`✅ '${newName}' 수입 완료!`);
+  } catch (e) { ui.alert("오류: " + e.message); }
 }
 
-// ==========================================
-// ■ 포맷 통일 로직 (역산 포함) — v19.28 기반, v20.7 수정
-// ==========================================
+// ── [Fix] 이름 열 국문 번역 (B열 강제) ──────────
+
+function translateNameColumn() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const tMap = getColMap(sheet);
+  let nameIdx = tMap["이름"];
+  if (nameIdx === undefined) nameIdx = 1;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const range = sheet.getRange(2, nameIdx + 1, lastRow - 1, 1);
+  const values = range.getValues();
+  let count = 0;
+
+  const translated = values.map(row => {
+    let t = String(row[0]).trim();
+    if (t !== "" && !/[가-힣]/.test(t)) {
+      try {
+        const tr = LanguageApp.translate(t, 'en', 'ko');
+        if (t !== tr) { count++; return [t + "\n" + tr]; }
+      } catch (e) {}
+    }
+    return [row[0]];
+  });
+
+  range.setValues(translated);
+  SpreadsheetApp.getUi().alert(`✅ 번역 완료: 총 ${count}명`);
+}
+
+// ── [3. 카테고리 정규화] ───────────────────────
+
+function buildCategoryMappingReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const sheet = ss.getActiveSheet(), tMap = getColMap(sheet);
+  const data = sheet.getDataRange().getValues(), rts = sheet.getDataRange().getRichTextValues();
+  if (data.length < 2) return ui.alert("데이터 없음");
+
+  const liList = [], refTeams = new Set(), refRoles = new Set();
+  for (let i = 1; i < data.length; i++) {
+    const rem = String(data[i][tMap["리멤버 페이지"]] || "").trim();
+    const li  = String(data[i][tMap["링크드인 페이지"]] || "").trim();
+    if ((rem === "" || rem === "-") && li !== "") {
+      liList.push({
+        row: i + 1,
+        name: data[i][tMap["이름"]],
+        liRt:  rts[i][tMap["링크드인 페이지"]],
+        remRt: rts[i][tMap["리멤버 페이지"]],
+        role:  data[i][tMap["직책"]]
+      });
+    }
+    if (rem !== "" && rem !== "-") {
+      const t = data[i][tMap["팀"]];   if (t && t !== "-") refTeams.add(String(t));
+      const p = data[i][tMap["직책"]]; if (p && p !== "-") refRoles.add(String(p));
+    }
+  }
+
+  if (liList.length === 0) return ui.alert("매핑할 LinkedIn 데이터가 없습니다.");
+
+  let rep = ss.getSheetByName(SHEET_CATEGORY_MAP) || ss.insertSheet(SHEET_CATEGORY_MAP);
+  rep.clear();
+  rep.appendRow(["행번호","이름","링크드인","리멤버","LinkedIn 직책(원본/수정가능)","→ 팀 (표준 선택)","→ 직책 (표준 선택)"]);
+  rep.getRange(1, 1, 1, 7).setBackground("#45818e").setFontColor("white").setFontWeight("bold").setHorizontalAlignment("center");
+
+  const reportRows = liList.map(item => [item.row, item.name, "", "", item.role, "", ""]);
+  rep.getRange(2, 1, reportRows.length, 7).setValues(reportRows);
+
+  const teamArr = [...refTeams].sort(), roleArr = [...refRoles].sort();
+  const dvT = teamArr.length > 0 ? SpreadsheetApp.newDataValidation().requireValueInList(teamArr, true).build() : null;
+  const dvR = roleArr.length > 0 ? SpreadsheetApp.newDataValidation().requireValueInList(roleArr, true).build() : null;
+
+  liList.forEach((item, idx) => {
+    const r = idx + 2;
+    if (item.liRt)  rep.getRange(r, 3).setRichTextValue(item.liRt);
+    if (item.remRt) rep.getRange(r, 4).setRichTextValue(item.remRt);
+    if (dvT) rep.getRange(r, 6).setDataValidation(dvT).setBackground("#fff2cc");
+    if (dvR) rep.getRange(r, 7).setDataValidation(dvR).setBackground("#fff2cc");
+  });
+
+  // 원본 시트명 저장 (applyCategoryMapping에서 사용)
+  PropertiesService.getScriptProperties().setProperty('categoryMapSourceSheet', sheet.getName());
+
+  rep.hideColumns(1);
+  rep.autoResizeColumns(2, 7);
+  rep.activate();
+}
+
+function applyCategoryMapping() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const rep = ss.getSheetByName(SHEET_CATEGORY_MAP);
+  if (!rep || rep.getLastRow() < 2) return ui.alert("매핑 리포트가 없습니다.");
+
+  // [FIX] getActiveSheet() 대신 리포트 생성 시 저장한 원본 시트명으로 찾기
+  const sourceName = PropertiesService.getScriptProperties().getProperty('categoryMapSourceSheet');
+  const main = sourceName ? ss.getSheetByName(sourceName) : null;
+  if (!main) return ui.alert("원본 시트를 찾을 수 없습니다.\n매핑 리포트를 다시 생성해주세요.");
+
+  const data = rep.getDataRange().getValues(), tMap = getColMap(main);
+  let count = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const rowIdx    = data[i][0];
+    const editedRole = String(data[i][4] || "").trim();
+    const selTeam   = String(data[i][5] || "").trim();
+    const selRole   = String(data[i][6] || "").trim();
+    const roleCell  = main.getRange(rowIdx, tMap["직책"] + 1);
+
+    if (selTeam) main.getRange(rowIdx, tMap["팀"] + 1).setValue(selTeam);
+
+    if (selRole) {
+      roleCell.setValue(selRole);
+      if (editedRole) {
+        const oldNote = roleCell.getNote();
+        const nText = `[LinkedIn 원본] ${editedRole}`;
+        roleCell.setNote(oldNote ? oldNote + "\n" + nText : nText);
+      }
+    } else if (editedRole) {
+      roleCell.setValue(editedRole);
+    }
+    count++;
+  }
+
+  rep.clear();
+  ui.alert(`✅ 총 ${count}명 반영 완료!`);
+}
+
+// ── [⚙️ 설정] ─────────────────────────────────
+
+function setupSettingSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let s = ss.getSheetByName(SETTING_SHEET_NAME) || ss.insertSheet(SETTING_SHEET_NAME);
+  s.clear();
+  s.appendRow(["회사명","LinkedIn 원본 URL","Remember 원본 URL","LinkedIn ID (자동)","Remember ID (자동)","제외 키워드"]);
+  s.getRange(1, 1, 1, 6).setBackground("#444444").setFontColor("white").setFontWeight("bold").setHorizontalAlignment("center");
+  s.getRange(2, 4, 100, 2).setBackground("#f3f3f3");
+  s.autoResizeColumns(1, 6);
+  ss.toast("✅ 설정 시트 생성 완료!");
+}
+
+function onEdit(e) {
+  if (!e) return;
+  const range = e.range, sheet = range.getSheet();
+  if (sheet.getName() !== SETTING_SHEET_NAME) return;
+  const col = range.getColumn(), val = String(e.value || "");
+  if (range.getRow() > 1 && (col === 2 || col === 3) && val.includes("/d/")) {
+    const match = val.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) sheet.getRange(range.getRow(), col + 2).setValue(match[1]);
+  }
+}
+
+// ── [PATCH] getOrSelectCompany — throw → null 반환 ──
+
+function getOrSelectCompany() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const activeName = ss.getActiveSheet().getName();
+  const setSheet = ss.getSheetByName(SETTING_SHEET_NAME);
+
+  // [PATCH] throw 대신 alert + null 반환
+  if (!setSheet) {
+    SpreadsheetApp.getUi().alert('⚠️ 설정 시트가 없습니다.\n메뉴 → "⚙️ 엔진 설정 시트 초기화/생성"을 먼저 실행하세요.');
+    return null;
+  }
+
+  const configData = setSheet.getDataRange().getValues();
+  const config = {};
+  for (let i = 1; i < configData.length; i++) {
+    const [name, lu, ru, li, ri, kw] = configData[i];
+    if (!name) continue;
+    config[name] = {
+      linkedinSourceId: li,
+      rememberSourceId: ri,
+      excludeKeywords: kw ? kw.toString().split(',').map(x => x.trim()).filter(x => x) : []
+    };
+  }
+
+  const names = Object.keys(config);
+  if (names.length === 0) {
+    SpreadsheetApp.getUi().alert('⚠️ 설정 시트에 회사 정보가 없습니다.');
+    return null;
+  }
+
+  let matched = names.find(n => activeName.includes(n));
+  if (!matched) {
+    const res = SpreadsheetApp.getUi().prompt(
+      '🏢 회사 선택',
+      names.map((n, i) => `${i + 1}. ${n}`).join('\n'),
+      SpreadsheetApp.getUi().ButtonSet.OK_CANCEL
+    );
+    if (res.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) return null;
+    const idx = parseInt(res.getResponseText()) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= names.length) return null;
+    matched = names[idx];
+  }
+
+  const p = PropertiesService.getScriptProperties();
+  const cfg = { name: matched, ...config[matched] };
+  cfg.sheet1Name = p.getProperty(`sheet1Name_${matched}`) || "";
+  cfg.sheet2Name = p.getProperty(`sheet2Name_${matched}`) || "";
+
+  // 캐시 초기화 (회사 변경 시 isExcludedCompany 재계산)
+  _cfgCache    = undefined;
+  _allCfgCache = undefined;
+
+  return cfg;
+}
+
+function getColMap(s) {
+  const h = s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0], m = {};
+  h.forEach((v, i) => m[v.toString().trim()] = i);
+  return m;
+}
+
+// ── [PATCH] 누락 함수 복구: getKeywordsForCompany ──
+
+function getKeywordsForCompany(companyName) {
+  if (!companyName) return [];
+  const name = companyName.toString().trim();
+  if (!name) return [];
+
+  if (_allCfgCache === undefined) {
+    _allCfgCache = {};
+    try {
+      const setSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTING_SHEET_NAME);
+      if (setSheet) {
+        const data = setSheet.getDataRange().getValues();
+        for (let i = 1; i < data.length; i++) {
+          const [cName, , , , , kw] = data[i];
+          if (!cName) continue;
+          const cStr = cName.toString().trim();
+          _allCfgCache[cStr] = kw
+            ? kw.toString().split(',').map(x => x.trim()).filter(x => x)
+            : [cStr];
+        }
+      }
+    } catch (e) {}
+  }
+
+  const configKey = Object.keys(_allCfgCache).find(k =>
+    k.toLowerCase() === name.toLowerCase() ||
+    (_allCfgCache[k].some(kw => name.toLowerCase().includes(kw.toLowerCase())))
+  );
+  return configKey ? _allCfgCache[configKey] : [name];
+}
+
+// ── [PATCH] 누락 함수 복구: isExcludedCompany ──
+// 팝업 없이 설정 시트에서 모든 회사의 제외 키워드를 합산해서 체크
+
+function isExcludedCompany(text) {
+  if (_cfgCache === undefined) {
+    _cfgCache = { excludeKeywords: [] };
+    try {
+      const setSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTING_SHEET_NAME);
+      if (setSheet) {
+        const data = setSheet.getDataRange().getValues();
+        const allKw = [];
+        for (let i = 1; i < data.length; i++) {
+          const kw = data[i][5]; // F열 = 제외 키워드
+          if (kw) kw.toString().split(',').map(x => x.trim()).filter(x => x).forEach(k => allKw.push(k));
+        }
+        _cfgCache = { excludeKeywords: allKw };
+      }
+    } catch (e) {}
+  }
+  if (!text || !_cfgCache.excludeKeywords.length) return false;
+  const cleanText = text.toLowerCase().replace(/\s/g, '');
+  return _cfgCache.excludeKeywords.some(kw => cleanText.includes(kw.toLowerCase().replace(/\s/g, '')));
+}
+
+// ── [🧹 정제] ─────────────────────────────────
+
 function unifyFormatLinkedinToRemember() {
   try {
     const sheet = SpreadsheetApp.getActiveSheet(), tMap = getColMap(sheet), lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
+    const cIdx = (tMap["재직 기간"] !== undefined ? tMap["재직 기간"] : tMap["재직기간"]) + 1;
+    const pIdx = tMap["이전 경력"] + 1;
+    const dataValues  = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    const companyVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
 
-    const careerColIdx = (tMap["재직 기간"] || tMap["재직기간"]) + 1;
-    const prevColIdx = tMap["이전 경력"] + 1;
-
-    // 재직 기간·이전 경력·A열(회사명) 동시 읽기
-    const careerVals  = sheet.getRange(2, careerColIdx, lastRow - 1, 1).getValues();
-    const prevVals    = sheet.getRange(2, prevColIdx,   lastRow - 1, 1).getValues();
-    const companyVals = sheet.getRange(2, 1,            lastRow - 1, 1).getValues(); // A열
-
-    const newCareer = [], newPrev = [];
-
-    for (let i = 0; i < careerVals.length; i++) {
-      let careerText = careerVals[i][0] ? careerVals[i][0].toString() : '';
-      let prevText   = prevVals[i][0]   ? prevVals[i][0].toString()   : '';
-
-      // ── [v20.8] Recovery: A열 회사명 기준으로 행별 키워드 파생 → 이전 경력 현 회사 라인 제거 ──
-      const rowKeywords = getKeywordsForCompany(companyVals[i][0]);
-      if (rowKeywords.length > 0 && prevText) {
-        const prevLines  = prevText.split('\n');
-        const compLines  = prevLines.filter(l => isCurrentCompanyLine(l, rowKeywords));
-        const otherLines = prevLines.filter(l => !isCurrentCompanyLine(l, rowKeywords));
-
-        if (compLines.length > 0) {
-          // 재직 기간이 비어있거나 기간 단독 형식이면 → 이전 경력에서 가장 이른 날짜 추출해 이식
-          const normKo = normalizeEngDateAndDuration(careerText.trim())
-            .replace(/(\d{4})년\s*(\d{1,2})월/g, (_, y, m) => y + '.' + m.padStart(2, '0'));
-          const isDurationOnly = /^(\d+년\s*\d+개월|\d+년|\d+개월)$/.test(normKo.trim());
-          if (careerText.trim() === '' || isDurationOnly) {
-            const earliest = extractEarliestDate(compLines);
-            if (earliest) careerText = earliest + ' ~ 현재';
-          }
-          // 이전 경력에서 현 회사 라인 제거
-          prevText = otherLines.join('\n');
+    dataValues.forEach((row, i) => {
+      let cT = String(row[cIdx - 1] || "").trim(), pT = String(row[pIdx - 1] || "").trim();
+      const kws = getKeywordsForCompany(companyVals[i][0]);
+      if (kws.length > 0 && pT) {
+        const pLs = pT.split('\n'), cLs = pLs.filter(l => isCurrentCompanyLine(l, kws));
+        if (cLs.length > 0 && (cT === "" || cT === "-")) {
+          const e = extractEarliestDate(cLs); if (e) cT = e + " ~ 현재";
         }
       }
+      row[cIdx - 1] = cT ? cT.split('\n').map(l => standardizeLineFinal(l, true)).filter(String).join('\n') : "";
+      row[pIdx - 1] = pT ? pT.split('\n').map(l => standardizeLineFinal(l, false)).filter(String).join('\n') : "";
+    });
 
-      // 재직 기간 정규화 (핀포인트 — C·D열 절대 포함 금지)
-      newCareer.push([
-        careerText
-          ? careerText.split('\n').map(l => standardizeLineFinal(l, true)).filter(String).join('\n')
-          : ''
-      ]);
-
-      // 이전 경력 정규화
-      newPrev.push([
-        prevText
-          ? prevText.split('\n').map(l => standardizeLineFinal(l, false)).filter(String).join('\n')
-          : ''
-      ]);
-    }
-
-    sheet.getRange(2, careerColIdx, newCareer.length, 1).setValues(newCareer);
-    sheet.getRange(2, prevColIdx,   newPrev.length,   1).setValues(newPrev);
-
-    SpreadsheetApp.getUi().alert("✅ [역산 완료] 모든 경력 포맷이 표준화되었습니다.");
+    sheet.getRange(2, cIdx, lastRow - 1, 1).setValues(dataValues.map(r => [r[cIdx - 1]]));
+    sheet.getRange(2, pIdx, lastRow - 1, 1).setValues(dataValues.map(r => [r[pIdx - 1]]));
+    SpreadsheetApp.getUi().alert("✅ 복구 및 포맷 정화 완료");
   } catch (e) { SpreadsheetApp.getUi().alert("오류: " + e.message); }
 }
 
+// [PATCH] 기간 단독 역산 로직 복구
 function standardizeLineFinal(line, isCurrentJob) {
   if (!line || line.trim() === "" || line === "-") return "";
-  line = line.trim();
-  line = normalizeEngDateAndDuration(line);  // [v20.7] 영문 날짜·기간 전처리
-  line = line.replace(/(\d{4})년\s*(\d{1,2})월/g, (m, p1, p2) => p1 + "." + p2.padStart(2, '0'));
+  line = normalizeEngDateAndDuration(line.trim())
+    .replace(/(\d{4})년\s*(\d{1,2})월/g, (m, p1, p2) => p1 + "." + p2.padStart(2, '0'));
 
-  const dateRegex = /(\d{4}\.\d{2})\s*[\-~|·]\s*([\d\.]+|현재|Present)/i;
+  // [PATCH] 기간 단독 형식 역산 ("3년 2개월" → "2023.01 ~ 현재 (3년 2개월)")
   const durationOnlyRegex = /^(\d+년\s*\d+개월|\d+년|\d+개월)$/;
-
-  // Case 1: "1년 11개월"만 있는 경우 → 역산
-  if (durationOnlyRegex.test(line)) {
-    const durMatch = line.match(/(\d+년)?\s*(\d+개월)?/);
-    const y = durMatch[1] ? parseInt(durMatch[1]) : 0;
-    const m = durMatch[2] ? parseInt(durMatch[2]) : 0;
-    const totalMonths = (y * 12) + m;
-    const now = new Date(2026, 2);
-    now.setMonth(now.getMonth() - totalMonths + 1);
-    const sy = now.getFullYear();
-    const sm = (now.getMonth() + 1).toString().padStart(2, '0');
-    const sD = `${sy}.${sm}`;
-    const durStr = y === 0 ? `${m}개월` : m === 0 ? `${y}년` : `${y}년 ${m}개월`;
-    return isCurrentJob ? `${sD} ~ 현재 (${durStr})` : `[${sD} ~ 현재 (${durStr})]`;
+  if (durationOnlyRegex.test(line.trim())) {
+    const yM = line.match(/(\d+)년/), mM = line.match(/(\d+)개월/);
+    const y = yM ? parseInt(yM[1]) : 0, mo = mM ? parseInt(mM[1]) : 0;
+    const now = new Date(); now.setMonth(now.getMonth() - (y * 12 + mo) + 1);
+    const sy = now.getFullYear(), sm = String(now.getMonth() + 1).padStart(2, '0');
+    const durStr = y === 0 ? `${mo}개월` : mo === 0 ? `${y}년` : `${y}년 ${mo}개월`;
+    return isCurrentJob
+      ? `${sy}.${sm} ~ 현재 (${durStr})`
+      : `[${sy}.${sm} ~ 현재 (${durStr})]`;
   }
 
-  // Case 2: 날짜 범위가 있는 경우
+  const dateRegex = /(\d{4}\.\d{2})\s*[\-~|·]\s*([\d\.]+|현재|Present)/i;
   const match = line.match(dateRegex);
   if (match) {
     let sD = match[1], eD = match[2].replace(/Present/i, "현재").trim();
-    let durMatch = line.match(/\((\d+년\s*\d+개월|\d+년|\d+개월)\)/);
-    let dur = "";
-    if (durMatch) {
-      const dStr = durMatch[1];
-      const yMatch = dStr.match(/(\d+)년/), mMatch = dStr.match(/(\d+)개월/);
-      const yVal = yMatch ? parseInt(yMatch[1]) : 0, mVal = mMatch ? parseInt(mMatch[1]) : 0;
-      dur = yVal === 0 ? `${mVal}개월` : mVal === 0 ? `${yVal}년` : `${yVal}년 ${mVal}개월`;
-    } else {
-      const sP = sD.split('.');
-      const sy = parseInt(sP[0]), sm = parseInt(sP[1]);
-      let ey, em;
-      if (eD === "현재") { ey = 2026; em = 3; }
-      else { const eP = eD.split('.'); ey = parseInt(eP[0]); em = parseInt(eP[1]); }
-      dur = calcDurationBetween(sy, sm, ey, em);
-    }
-    let info = line.replace(dateRegex, '').replace(/\(.*?\)/g, '').replace(/[\[\]]/g, '').replace(/^\s*[\-·~]\s*/, '').trim();
-    info = info.replace(/\(주\)|\(유\)|\(사\)|㈜/g, '').replace(/\s{2,}/g, ' ').trim();
-    if (!isCurrentJob) info = info.replace(' - ', ' | ');  // [v20.8] 링크드인 구분자 통일
+    const sP = sD.split('.'), sy = parseInt(sP[0]), sm = parseInt(sP[1]);
+    let ey = new Date().getFullYear(), em = new Date().getMonth() + 1;
+    if (eD !== "현재") { const eP = eD.split('.'); ey = parseInt(eP[0]); em = parseInt(eP[1]); }
+    const dur = calcDurationBetween(sy, sm, ey, em);
+    let info = line.replace(dateRegex, '').replace(/\(.*?\)/g, '').replace(/[\[\]]/g, '')
+      .replace(/^\s*[\-·~]\s*/, '').replace(/\(주\)|\(유\)|\(사\)|㈜/g, '').replace(/\s{2,}/g, ' ')
+      .replace(' - ', ' | ').trim();
     if (!isCurrentJob && isExcludedCompany(info)) return "";
     return isCurrentJob ? `${sD} ~ ${eD} (${dur}) ${info}` : `[${sD} ~ ${eD} (${dur})] ${info}`;
   }
@@ -235,738 +442,262 @@ function standardizeLineFinal(line, isCurrentJob) {
   return isCurrentJob ? line : (isExcludedCompany(line) ? "" : line);
 }
 
-function calcDurationBetween(sy, sm, ey, em) {
-  var total = (ey * 12 + em) - (sy * 12 + sm) + 1;
-  if (total <= 0) return "0개월";
-  var y = Math.floor(total / 12), m = total % 12;
-  if (y === 0) return `${m}개월`;
-  if (m === 0) return `${y}년`;
-  return `${y}년 ${m}개월`;
-}
+// ── [📂 중복 대조] Gate 방식 ──────────────────
 
-// [v20.8] A열 회사명 → 키워드 배열 파생
-// COMPANY_CONFIG에 있으면 해당 excludeKeywords 사용, 없으면 회사명 자체를 키워드로
-function getKeywordsForCompany(companyName) {
-  if (!companyName) return [];
-  const name = companyName.toString().trim();
-  if (!name) return [];
-  const configKey = Object.keys(COMPANY_CONFIG).find(k =>
-    k.toLowerCase() === name.toLowerCase() ||
-    (COMPANY_CONFIG[k].excludeKeywords &&
-     COMPANY_CONFIG[k].excludeKeywords.some(kw => name.toLowerCase().includes(kw.toLowerCase())))
-  );
-  return configKey ? COMPANY_CONFIG[configKey].excludeKeywords : [name];
-}
-
-// [v20.7] 이전 경력 라인이 현 회사 키워드를 포함하는지 판별
-function isCurrentCompanyLine(line, keywords) {
-  const clean = line.toLowerCase().replace(/\s/g, '');
-  return keywords.some(kw => clean.includes(kw.toLowerCase().replace(/\s/g, '')));
-}
-
-// [v20.7] 현 회사 라인 목록에서 가장 이른 시작 날짜(YYYY.MM) 추출
-function extractEarliestDate(lines) {
-  let earliest = null;
-  lines.forEach(line => {
-    let norm = normalizeEngDateAndDuration(line);
-    norm = norm.replace(/(\d{4})년\s*(\d{1,2})월/g, (_, y, m) => y + '.' + m.padStart(2, '0'));
-    const dates = [...norm.matchAll(/(\d{4}\.\d{2})/g)].map(m => m[1]);
-    dates.forEach(d => { if (!earliest || d < earliest) earliest = d; });
-  });
-  return earliest;
-}
-
-// [v20.7] cfg 캐시 — 실행당 한 번만 PropertiesService 읽음
-let _cfgCache = undefined;
-
-function isExcludedCompany(text) {
-  if (_cfgCache === undefined) _cfgCache = getOrSelectCompany();
-  if (!_cfgCache || !_cfgCache.excludeKeywords || !text) return false;
-  const cleanText = text.toLowerCase().replace(/\s/g, '');
-  return _cfgCache.excludeKeywords.some(kw => cleanText.includes(kw.toLowerCase().replace(/\s/g, '')));
-}
-
-// ==========================================
-// ■ [v20.1] 중복 대조 — Gate 방식 + 링크 컬럼 추가
-// 리포트 컬럼 레이아웃 (16열):
-// [0]선택 [1]처리 [2]입사년월 [3]일치항목
-// [4]s1행 [5]s1이름 [6]s1리멤버링크 [7]s1링크드인링크 [8]s1경력 [9]s1학력
-// [10]s2행 [11]s2이름 [12]s2리멤버링크 [13]s2링크드인링크 [14]s2경력 [15]s2학력
-// ==========================================
 function runDuplicateScan() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
   const cfg = getOrSelectCompany(); if (!cfg) return;
-  const sheet1 = ss.getSheetByName(cfg.sheet1Name), sheet2 = ss.getSheetByName(cfg.sheet2Name);
-  if (!sheet1 || !sheet2) return ui.alert(`❌ 시트가 없습니다.`);
+  const s1 = ss.getSheetByName(cfg.sheet1Name), s2 = ss.getSheetByName(cfg.sheet2Name);
+  if (!s1 || !s2) return ui.alert(`❌ 시트 없음 (${cfg.sheet1Name} / ${cfg.sheet2Name})`);
 
-  const data1 = sheet1.getDataRange().getValues(), data2 = sheet2.getDataRange().getValues();
-  const h1 = data1[0], h2 = data2[0];
-  let idx1, idx2;
-  try {
-    idx1 = {
-      name:      getColIndex(h1, '이름',        cfg.sheet1Name),
-      company:   getColIndex(h1, '이전 경력',   cfg.sheet1Name),
-      period:    getColIndex(h1, '재직 기간',   cfg.sheet1Name),
-      education: getColIndex(h1, '학력',        cfg.sheet1Name),
-      remember:  getColIndex(h1, '리멤버 페이지', cfg.sheet1Name),
-      linkedin:  getColIndex(h1, '링크드인 페이지', cfg.sheet1Name)
-    };
-    idx2 = {
-      name:      getColIndex(h2, '이름',        cfg.sheet2Name),
-      company:   getColIndex(h2, '이전 경력',   cfg.sheet2Name),
-      period:    getColIndex(h2, '재직 기간',   cfg.sheet2Name),
-      education: getColIndex(h2, '학력',        cfg.sheet2Name),
-      remember:  getColIndex(h2, '리멤버 페이지', cfg.sheet2Name),
-      linkedin:  getColIndex(h2, '링크드인 페이지', cfg.sheet2Name)
-    };
-  } catch (e) { return ui.alert('❌ ' + e.message); }
+  const d1 = s1.getDataRange().getValues(), d2 = s2.getDataRange().getValues();
+  const h1 = d1[0], h2 = d2[0];
+  const idx1 = { n: h1.indexOf('이름'), p: h1.indexOf('재직 기간'), c: h1.indexOf('이전 경력'), e: h1.indexOf('학력'), r: h1.indexOf('리멤버 페이지'), l: h1.indexOf('링크드인 페이지') };
+  const idx2 = { n: h2.indexOf('이름'), p: h2.indexOf('재직 기간'), c: h2.indexOf('이전 경력'), e: h2.indexOf('학력'), r: h2.indexOf('리멤버 페이지'), l: h2.indexOf('링크드인 페이지') };
 
-  // 프로필 링크 RichText 전체 읽기 (C열=리멤버, D열=링크드인, 1-based 3·4)
-  const lastRow1 = data1.length - 1, lastRow2 = data2.length - 1;
-  const rt1C = lastRow1 > 0 ? sheet1.getRange(2, idx1.remember + 1, lastRow1, 1).getRichTextValues() : [];
-  const rt1D = lastRow1 > 0 ? sheet1.getRange(2, idx1.linkedin + 1, lastRow1, 1).getRichTextValues() : [];
-  const rt2C = lastRow2 > 0 ? sheet2.getRange(2, idx2.remember + 1, lastRow2, 1).getRichTextValues() : [];
-  const rt2D = lastRow2 > 0 ? sheet2.getRange(2, idx2.linkedin + 1, lastRow2, 1).getRichTextValues() : [];
+  const lastRow1 = d1.length - 1, lastRow2 = d2.length - 1;
+  const rt1C = lastRow1 > 0 ? s1.getRange(2, idx1.r + 1, lastRow1, 1).getRichTextValues() : [];
+  const rt1D = lastRow1 > 0 ? s1.getRange(2, idx1.l + 1, lastRow1, 1).getRichTextValues() : [];
+  const rt2C = lastRow2 > 0 ? s2.getRange(2, idx2.r + 1, lastRow2, 1).getRichTextValues() : [];
+  const rt2D = lastRow2 > 0 ? s2.getRange(2, idx2.l + 1, lastRow2, 1).getRichTextValues() : [];
 
+  // [PATCH] null 체크 추가
   const getUrl = (rtArr, rowIdx) => {
     const rt = rtArr[rowIdx] && rtArr[rowIdx][0];
     return rt ? (rt.getLinkUrl() || '') : '';
   };
 
-  const duplicates = [];
-
-  for (let i = 1; i < data1.length; i++) {
-    const r = data1[i]; if (!r[idx1.name]) continue;
-
-    for (let j = 1; j < data2.length; j++) {
-      const l = data2[j]; if (!l[idx2.name]) continue;
-
-      // ── [GATE] 입사년월 일치 여부 — 불일치 시 즉시 제외 ──
-      const joinDate1 = extractAprStartDate(r[idx1.period]);
-      const joinDate2 = extractAprStartDate(l[idx2.period]);
-      if (joinDate1 === '-' || joinDate2 === '-' || joinDate1 !== joinDate2) continue;
-
-      // ── [보조 조건] 성씨 / 이전 경력 / 학력 ──
-      const secondary = [
-        { label: '성(姓) 일치',    match: compareSurname(r[idx1.name], l[idx2.name]) },
-        { label: '이전 경력 유사', match: comparePreviousCompanies(r[idx1.company], l[idx2.company]) },
-        { label: '학력 유사',      match: compareEducation(r[idx1.education], l[idx2.education]) }
-      ];
-      const matched = secondary.filter(c => c.match);
+  const dups = [];
+  for (let i = 1; i < d1.length; i++) {
+    for (let j = 1; j < d2.length; j++) {
+      const dt1 = extractAprStartDate(d1[i][idx1.p]), dt2 = extractAprStartDate(d2[j][idx2.p]);
+      if (dt1 === '-' || dt1 !== dt2) continue;
+      const matched = [
+        { l: '성 일치',    m: compareSurname(d1[i][idx1.n], d2[j][idx2.n]) },
+        { l: '경력 유사',  m: comparePreviousCompanies(d1[i][idx1.c], d2[j][idx2.c]) },
+        { l: '학력 유사',  m: compareEducation(d1[i][idx1.e], d2[j][idx2.e]) }
+      ].filter(x => x.m);
       if (matched.length === 0) continue;
-
-      const autoMerge = matched.length >= 2;
-      duplicates.push({
-        autoMerge, matched, joinDate: joinDate1,
-        rRow: i + 1, lRow: j + 1, r, l, idx1, idx2,
-        rememberUrl1: getUrl(rt1C, i - 1), linkedinUrl1: getUrl(rt1D, i - 1),
-        rememberUrl2: getUrl(rt2C, j - 1), linkedinUrl2: getUrl(rt2D, j - 1)
+      dups.push({
+        a: matched.length >= 2, m: matched, dt: dt1,
+        r1: i + 1, r2: j + 1, d1: d1[i], d2: d2[j],
+        u1C: getUrl(rt1C, i - 1), u1D: getUrl(rt1D, i - 1),
+        u2C: getUrl(rt2C, j - 1), u2D: getUrl(rt2D, j - 1)
       });
     }
   }
 
-  // ── 리포트 작성 ──
-  let report = ss.getSheetByName(SHEET_DUP_REPORT) || ss.insertSheet(SHEET_DUP_REPORT);
-  report.clear();
+  let rep = ss.getSheetByName(SHEET_DUP_REPORT) || ss.insertSheet(SHEET_DUP_REPORT);
+  rep.clear();
+  rep.appendRow(['선택','처리','입사년월','일치항목','기존행','기존이름','기존리멤버','기존링크드인','신규행','신규이름','신규리멤버','신규링크드인']);
+  rep.getRange(1, 1, 1, 12).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
 
-  const headers = [
-    '선택', '처리', '입사년월', '일치항목',
-    `[${cfg.sheet1Name}] 행`, `[${cfg.sheet1Name}] 이름`, `[${cfg.sheet1Name}] 리멤버`, `[${cfg.sheet1Name}] 링크드인`, `[${cfg.sheet1Name}] 경력`, `[${cfg.sheet1Name}] 학력`,
-    `[${cfg.sheet2Name}] 행`, `[${cfg.sheet2Name}] 이름`, `[${cfg.sheet2Name}] 리멤버`, `[${cfg.sheet2Name}] 링크드인`, `[${cfg.sheet2Name}] 경력`, `[${cfg.sheet2Name}] 학력`
-  ];
-  report.appendRow(headers);
-  report.getRange(1, 1, 1, headers.length).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
-
-  if (duplicates.length > 0) {
-    duplicates.sort((a, b) => b.matched.length - a.matched.length);
-
-    // 링크 제외 텍스트 값 먼저 세팅
-    const reportValues = duplicates.map(d => [
-      false,
-      d.autoMerge ? '✅ 자동 병합' : '🔍 검토 필요',
-      d.joinDate,
-      d.matched.map(c => c.label).join(' · '),
-      d.rRow, String(d.r[d.idx1.name]), '', '', extractPrevCompanySummary(d.r[d.idx1.company]), extractSchoolSummary(d.r[d.idx1.education]),
-      d.lRow, String(d.l[d.idx2.name]), '', '', extractPrevCompanySummary(d.l[d.idx2.company]), extractSchoolSummary(d.l[d.idx2.education])
-    ]);
-    report.getRange(2, 1, reportValues.length, headers.length).setValues(reportValues);
-
-    // 링크 컬럼에 RichText 하이퍼링크 삽입 (col 7=s1리멤버, 8=s1링크드인, 13=s2리멤버, 14=s2링크드인)
-    const buildLink = (text, url) =>
-      url ? SpreadsheetApp.newRichTextValue().setText(text).setLinkUrl(url).build()
-          : SpreadsheetApp.newRichTextValue().setText('-').build();
-
-    duplicates.forEach((d, i) => {
-      const row = i + 2;
-      report.getRange(row, 7).setRichTextValue(buildLink('리멤버', d.rememberUrl1));
-      report.getRange(row, 8).setRichTextValue(buildLink('linkedin', d.linkedinUrl1));
-      report.getRange(row, 13).setRichTextValue(buildLink('리멤버', d.rememberUrl2));
-      report.getRange(row, 14).setRichTextValue(buildLink('linkedin', d.linkedinUrl2));
+  if (dups.length > 0) {
+    const rv = dups.map(d => [false, d.a ? '✅자동' : '🔍검토', d.dt, d.m.map(x => x.l).join('·'), d.r1, d.d1[idx1.n], '', '', d.r2, d.d2[idx2.n], '', '']);
+    rep.getRange(2, 1, rv.length, 12).setValues(rv);
+    dups.forEach((d, k) => {
+      const r = k + 2;
+      const b = (t, u) => SpreadsheetApp.newRichTextValue().setText(t).setLinkUrl(u || "").build();
+      rep.getRange(r, 7).setRichTextValue(b('리멤버',  d.u1C));
+      rep.getRange(r, 8).setRichTextValue(b('linkedin', d.u1D));
+      rep.getRange(r, 11).setRichTextValue(b('리멤버',  d.u2C));
+      rep.getRange(r, 12).setRichTextValue(b('linkedin', d.u2D));
+      rep.getRange(r, 1, 1, 12).setBackground(d.a ? '#e6f4ea' : '#fef9c3');
     });
-
-    // 체크박스 삽입 + 자동 병합 행 사전 체크
-    const checkboxRange = report.getRange(2, 1, reportValues.length, 1);
-    checkboxRange.insertCheckboxes();
-    duplicates.forEach((d, i) => {
-      if (d.autoMerge) report.getRange(i + 2, 1).setValue(true);
-    });
-
-    // 행 색상 (자동 병합: 연초록 / 검토 필요: 연노랑)
-    duplicates.forEach((d, i) => {
-      report.getRange(i + 2, 1, 1, headers.length)
-        .setBackground(d.autoMerge ? '#e6f4ea' : '#fef9c3');
-    });
+    rep.getRange(2, 1, rv.length, 1).insertCheckboxes();
+    dups.forEach((d, k) => { if (d.a) rep.getRange(k + 2, 1).setValue(true); });
   }
 
-  report.activate();
-  const autoCount = duplicates.filter(d => d.autoMerge).length;
-  ui.alert(`✅ 완료: 총 ${duplicates.length}건\n✅ 자동 병합 대상: ${autoCount}건\n🔍 검토 필요: ${duplicates.length - autoCount}건`);
+  rep.activate();
+  const autoCount = dups.filter(d => d.a).length;
+  ui.alert(`✅ 완료: 총 ${dups.length}건\n✅ 자동 병합: ${autoCount}건\n🔍 검토 필요: ${dups.length - autoCount}건`);
 }
 
-// ==========================================
-// ■ [v20.2] 병합 실행
-// 리포트 컬럼: [0]선택 [1]처리 [2]입사년월 [3]일치항목
-//             [4]s1행 [5]s1이름 [6]s1리멤버 [7]s1링크드인 [8]s1경력 [9]s1학력
-//             [10]s2행 [11]s2이름 [12]s2리멤버 [13]s2링크드인 [14]s2경력 [15]s2학력
-// ==========================================
 function applyDuplicateSelections() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const reportSheet = ss.getSheetByName(SHEET_DUP_REPORT);
-  const cfg = getOrSelectCompany(); if (!cfg) return;
-  const targetSheet = ss.getSheetByName(cfg.sheet1Name); // 리멤버
-  const newSheet    = ss.getSheetByName(cfg.sheet2Name); // 링크드인
-  if (!reportSheet || !targetSheet || !newSheet) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const repS = ss.getSheetByName(SHEET_DUP_REPORT);
+  const cfg  = getOrSelectCompany(); if (!cfg) return;
+  const tarS = ss.getSheetByName(cfg.sheet1Name), newS = ss.getSheetByName(cfg.sheet2Name);
+  if (!repS || !tarS || !newS) return ui.alert('❌ 필요한 시트가 없습니다.');
 
-  const rData  = reportSheet.getDataRange().getValues();
-  const tMap1  = getColMap(targetSheet);
-  const tMap2  = getColMap(newSheet);
-
-  // 리멤버 시트 컬럼 인덱스 (1-based)
-  const nameColIdx = tMap1["이름"]           + 1; // B열
-  const liColIdx   = tMap1["링크드인 페이지"] + 1; // D열
-  const posColIdx  = tMap1["직책"]           + 1; // G열
-
-  // 링크드인 시트 컬럼 인덱스 (1-based)
-  const li_nameIdx = tMap2["이름"]            + 1;
-  const li_liIdx   = tMap2["링크드인 페이지"] + 1;
-  const li_posIdx  = tMap2["직책"]            + 1;
-
-  const rowsToDelete = [];
+  const rData = repS.getDataRange().getValues();
+  const t1 = getColMap(tarS), t2 = getColMap(newS);
+  const del = [];
 
   for (let i = 1; i < rData.length; i++) {
-    if (rData[i][0] !== true) continue; // 체크박스 선택 행만
+    if (rData[i][0] !== true) continue;
+    const a = rData[i][4], b = rData[i][8];
+    const name = newS.getRange(b, t2["이름"] + 1).getValue();
+    const link = newS.getRange(b, t2["링크드인 페이지"] + 1).getRichTextValue();
+    const pos  = newS.getRange(b, t2["직책"] + 1).getValue();
 
-    const aIdx = rData[i][4];  // sheet1(리멤버) 행 번호
-    const bIdx = rData[i][10]; // sheet2(링크드인) 행 번호
-
-    // 1. 링크드인 이름 → 리멤버 B열 덮어쓰기
-    const liName = newSheet.getRange(bIdx, li_nameIdx).getValue();
-    if (liName) targetSheet.getRange(aIdx, nameColIdx).setValue(liName);
-
-    // 2. 링크드인 페이지 URL → 리멤버 D열 이식 (RichText + 텍스트 fallback)
-    const liLinkRt = newSheet.getRange(bIdx, li_liIdx).getRichTextValue();
-    const liLinkUrl = liLinkRt ? liLinkRt.getLinkUrl() : null;
-    const liLinkText = liLinkRt ? liLinkRt.getText() : '';
-    if (liLinkUrl) {
-      targetSheet.getRange(aIdx, liColIdx).setRichTextValue(
-        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(liLinkUrl).build()
+    tarS.getRange(a, t1["이름"] + 1).setValue(name);
+    if (link && link.getLinkUrl()) {
+      tarS.getRange(a, t1["링크드인 페이지"] + 1).setRichTextValue(
+        SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(link.getLinkUrl()).build()
       );
-    } else if (liLinkText && liLinkText.trim() !== '' && liLinkText.trim() !== '-') {
-      // URL 없이 텍스트만 있는 경우 (plain text URL 포함) 그대로 이식
-      targetSheet.getRange(aIdx, liColIdx).setValue(liLinkText.trim());
     }
-
-    // 3. 링크드인 직책 → 리멤버 G열 셀에 메모 추가
-    const liPos = newSheet.getRange(bIdx, li_posIdx).getValue();
-    if (liPos) {
-      const cell = targetSheet.getRange(aIdx, posColIdx);
-      const existing = cell.getNote();
-      cell.setNote(existing ? `${existing}\n[LinkedIn] ${liPos}` : `[LinkedIn] ${liPos}`);
+    if (pos) {
+      const c = tarS.getRange(a, t1["직책"] + 1);
+      c.setNote((c.getNote() ? c.getNote() + "\n" : "") + "[LinkedIn] " + pos);
     }
-
-    rowsToDelete.push(bIdx);
+    del.push(b);
   }
 
-  // 역순 삭제 (인덱스 밀림 방지)
-  [...new Set(rowsToDelete)].sort((a, b) => b - a).forEach(idx => newSheet.deleteRow(idx));
-
-  // 리포트 시트 초기화
-  reportSheet.clear();
-
-  SpreadsheetApp.getUi().alert(`✅ 병합 완료: ${rowsToDelete.length}건 처리\n리포트 시트가 초기화되었습니다.`);
+  [...new Set(del)].sort((x, y) => y - x).forEach(idx => newS.deleteRow(idx));
+  repS.clear();
+  ui.alert(`✅ 처리 완료: ${del.length}건`);
 }
 
-// ==========================================
-// ■ [v20.2] 링크드인 잔여 데이터 → 리멤버 시트에 append
-// 중복 처리 후 링크드인 시트에 남은 행(리멤버에 없는 인재)을 리멤버 시트 하단에 붙임.
-// 링크드인 시트는 작업 후 숨김 처리.
-// ==========================================
 function mergeLinkedinIntoRemember() {
   const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
   const cfg = getOrSelectCompany(); if (!cfg) return;
-  const remSheet = ss.getSheetByName(cfg.sheet1Name);
-  const liSheet  = ss.getSheetByName(cfg.sheet2Name);
-  if (!remSheet || !liSheet) return ui.alert('❌ 시트가 없습니다.');
+  const remS = ss.getSheetByName(cfg.sheet1Name), liS = ss.getSheetByName(cfg.sheet2Name);
+  if (!remS || !liS) return ui.alert('❌ 시트가 없습니다.');
 
-  // ── 가드: 중복 리포트 미처리 시 경고 ──
-  const reportSheet = ss.getSheetByName(SHEET_DUP_REPORT);
-  if (reportSheet && reportSheet.getLastRow() > 1) {
-    const res = ui.alert(
-      '⚠️ 중복 리포트 미처리',
-      `'${SHEET_DUP_REPORT}' 시트에 처리되지 않은 중복 데이터가 있습니다.\n` +
-      `먼저 [선택 중복 병합/삭제 실행]을 완료하세요.\n\n그래도 진행하시겠습니까?`,
-      ui.ButtonSet.YES_NO
-    );
+  const repSheet = ss.getSheetByName(SHEET_DUP_REPORT);
+  if (repSheet && repSheet.getLastRow() > 1) {
+    const res = ui.alert('⚠️ 중복 리포트 미처리', '처리되지 않은 중복 데이터가 있습니다. 그래도 진행하시겠습니까?', ui.ButtonSet.YES_NO);
     if (res !== ui.Button.YES) return;
   }
 
-  const liData = liSheet.getDataRange().getValues().slice(1); // 헤더 제외
+  const liData = liS.getDataRange().getValues().slice(1);
   if (liData.length === 0) return ui.alert('링크드인 시트에 남은 데이터가 없습니다.');
 
-  // 링크드인 시트의 RichText (C열=리멤버링크, D열=링크드인링크) 읽기
-  const tMap2  = getColMap(liSheet);
-  const liRemColIdx = tMap2["리멤버 페이지"]  + 1;
-  const liLiColIdx  = tMap2["링크드인 페이지"] + 1;
-  const rtC = liSheet.getRange(2, liRemColIdx, liData.length, 1).getRichTextValues();
-  const rtD = liSheet.getRange(2, liLiColIdx,  liData.length, 1).getRichTextValues();
+  const t2 = getColMap(liS);
+  const rtC = liS.getRange(2, t2["리멤버 페이지"]  + 1, liData.length, 1).getRichTextValues();
+  const rtD = liS.getRange(2, t2["링크드인 페이지"] + 1, liData.length, 1).getRichTextValues();
 
-  // 리멤버 시트에 append (setValues로 텍스트 먼저)
-  const startRow = remSheet.getLastRow() + 1;
-  remSheet.getRange(startRow, 1, liData.length, liData[0].length).setValues(liData);
+  const startRow = remS.getLastRow() + 1;
+  remS.getRange(startRow, 1, liData.length, liData[0].length).setValues(liData);
+  const t1 = getColMap(remS);
+  remS.getRange(startRow, t1["리멤버 페이지"]  + 1, liData.length, 1).setRichTextValues(rtC);
+  remS.getRange(startRow, t1["링크드인 페이지"] + 1, liData.length, 1).setRichTextValues(rtD);
 
-  // C·D열 RichText 이식 (Pinpoint Update — C·D열만 별도 처리)
-  const tMap1     = getColMap(remSheet);
-  const remColIdx = tMap1["리멤버 페이지"]  + 1;
-  const liColIdx  = tMap1["링크드인 페이지"] + 1;
-  remSheet.getRange(startRow, remColIdx, liData.length, 1).setRichTextValues(rtC);
-  remSheet.getRange(startRow, liColIdx,  liData.length, 1).setRichTextValues(rtD);
-
-  // 링크드인 시트 숨김
-  liSheet.hideSheet();
-
-  ui.alert(`✅ 완료: 링크드인 잔여 ${liData.length}건을 리멤버 시트에 추가했습니다.\n링크드인 시트는 숨김 처리되었습니다.`);
+  liS.hideSheet();
+  ui.alert(`✅ 합치기 완료: ${liData.length}건`);
 }
 
-// ==========================================
-// ■ [v20.9] 팀/직책 카테고리 매핑 — STEP 1: LinkedIn 출처 직책 고유값 추출
-// - 소스: cfg.sheet1Name (통합 Remember 시트, mergeLinkedinIntoRemember 실행 후)
-// - LinkedIn 출처 행: C열(리멤버 페이지) 비어있고 D열(링크드인 페이지) 있는 행
-// - 해당 행의 G열(직책) 고유값 → A열 (빈값은 '(빈값)'으로 포함)
-// - 기준 행(C열 있는 행)의 F/G 고유값 → B/C열 드롭다운 옵션
-// 매핑 리포트 3열: A(LinkedIn 직책 원본값) | B(→팀 표준값 드롭다운) | C(→직책 표준값 드롭다운)
-// ==========================================
-function buildCategoryMappingReport() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const cfg = getOrSelectCompany(); if (!cfg) return;
+// ── [기타 유틸리티] ───────────────────────────
 
-  const sheet = ss.getSheetByName(cfg.sheet1Name);
-  if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
+function normalizeEngDateAndDuration(l) {
+  l = l.replace(/(\d+)\s+yrs?\s+(\d+)\s+mos?/gi, (_, y, m) => `${y}년 ${m}개월`)
+       .replace(/(\d+)\s+yrs?/gi, '$1년')
+       .replace(/(\d+)\s+mos?/gi, '$1개월');
+  const M = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  return l.replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/gi,
+    (_, mon, yr) => `${yr}.${M[mon.toLowerCase()]}`).replace(/\bPresent\b/gi, '현재');
+}
 
-  const tMap = getColMap(sheet);
-  const remColIdx  = tMap["리멤버 페이지"];   // 0-based
-  const liColIdx   = tMap["링크드인 페이지"]; // 0-based
-  const teamColIdx = tMap["팀"];              // 0-based
-  const posColIdx  = tMap["직책"];            // 0-based
+function calcDurationBetween(sy, sm, ey, em) {
+  const t = (ey * 12 + em) - (sy * 12 + sm) + 1;
+  if (t <= 0) return "0개월";
+  const y = Math.floor(t / 12), m = t % 12;
+  return y === 0 ? `${m}개월` : m === 0 ? `${y}년` : `${y}년 ${m}개월`;
+}
 
-  if (remColIdx === undefined || liColIdx === undefined || teamColIdx === undefined || posColIdx === undefined) {
-    return ui.alert(`❌ 필수 컬럼(리멤버 페이지/링크드인 페이지/팀/직책)이 없습니다.`);
-  }
+function isCurrentCompanyLine(l, k) {
+  const c = l.toLowerCase().replace(/\s/g, '');
+  return k.some(x => c.includes(x.toLowerCase().replace(/\s/g, '')));
+}
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return ui.alert('데이터가 없습니다.');
-
-  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-
-  // LinkedIn 출처 행: C열 비어있고 D열 있는 행
-  // 기준 행: C열 있는 행 (리멤버 원본 + 중복 병합 행)
-  const liSourceRows = data.filter(row =>
-    String(row[remColIdx] || '').trim() === '' && String(row[liColIdx] || '').trim() !== ''
-  );
-  const baseRows = data.filter(row =>
-    String(row[remColIdx] || '').trim() !== ''
-  );
-
-  if (liSourceRows.length === 0) {
-    return ui.alert(
-      `LinkedIn 출처 행(C열 없고 D열 있는 행)이 없습니다.\n` +
-      `먼저 '링크드인 잔여 데이터 → 리멤버 시트에 합치기'를 실행하세요.`
-    );
-  }
-
-  // LinkedIn 출처 행의 G열(직책) 고유값 (빈값 포함 → '(빈값)')
-  const liPosSet = new Set();
-  liSourceRows.forEach(row => {
-    const p = String(row[posColIdx] || '').trim();
-    liPosSet.add(p === '' ? '(빈값)' : p);
+function extractEarliestDate(ls) {
+  let e = null;
+  ls.forEach(l => {
+    let n = normalizeEngDateAndDuration(l).replace(/(\d{4})년\s*(\d{1,2})월/g, (_, y, m) => y + '.' + m.padStart(2, '0'));
+    [...n.matchAll(/(\d{4}\.\d{2})/g)].map(m => m[1]).forEach(d => { if (!e || d < e) e = d; });
   });
-
-  // 기준 행의 F/G 고유값 (드롭다운 옵션)
-  const baseTeamSet = new Set(), basePosSet = new Set();
-  baseRows.forEach(row => {
-    const t = String(row[teamColIdx] || '').trim(); if (t) baseTeamSet.add(t);
-    const p = String(row[posColIdx]  || '').trim(); if (p) basePosSet.add(p);
-  });
-
-  // 매핑 시트 작성
-  let mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
-  if (!mapSheet) mapSheet = ss.insertSheet(SHEET_CATEGORY_MAP);
-  else mapSheet.clear();
-
-  // 3열 헤더: A(LinkedIn 직책 원본값) | B(→팀 드롭다운) | C(→직책 표준값 드롭다운)
-  const headers = ['LinkedIn 직책 원본값', '→ 팀 (표준값)', '→ 직책 (표준값)'];
-  mapSheet.appendRow(headers);
-  mapSheet.getRange(1, 1, 1, 3).setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
-
-  const liPosArr = [...liPosSet].sort();
-  const rows = liPosArr.map(p => [p, '', '']);
-  mapSheet.getRange(2, 1, rows.length, 3).setValues(rows);
-
-  // B·C열 노란 배경 (입력 대상)
-  mapSheet.getRange(2, 2, rows.length, 2).setBackground('#fff9c4');
-
-  // B열 드롭다운 — 기준 행의 팀 고유값
-  const teamArr = [...baseTeamSet].sort();
-  if (teamArr.length > 0) {
-    const teamRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(teamArr, true).setAllowInvalid(true).build();
-    mapSheet.getRange(2, 2, rows.length, 1).setDataValidation(teamRule);
-  }
-
-  // C열 드롭다운 — 기준 행의 직책 고유값
-  const posArr = [...basePosSet].sort();
-  if (posArr.length > 0) {
-    const posRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(posArr, true).setAllowInvalid(true).build();
-    mapSheet.getRange(2, 3, rows.length, 1).setDataValidation(posRule);
-  }
-
-  mapSheet.activate();
-  ui.alert(
-    `✅ 완료: LinkedIn 출처 직책 ${liPosSet.size}개 고유값을 추출했습니다.\n` +
-    `(기준 행 팀 ${baseTeamSet.size}개, 직책 ${basePosSet.size}개 드롭다운 세팅)\n\n` +
-    `'${SHEET_CATEGORY_MAP}' 시트의 B열(팀)·C열(직책)을 채운 뒤 '카테고리 매핑 적용'을 실행하세요.`
-  );
+  return e;
 }
 
-// ==========================================
-// ■ [v20.9] 팀/직책 카테고리 매핑 — STEP 2: LinkedIn 출처 행에만 매핑 적용
-// - 적용 대상: cfg.sheet1Name에서 C열(리멤버 페이지) 없고 D열(링크드인 페이지) 있는 행만
-// - G열(직책) 원본값으로 매핑 조회 → F열(팀) + G열(직책) 동시 업데이트
-// - 3열 레이아웃: A(LinkedIn 직책 원본값), B(→팀 표준값), C(→직책 표준값)
-// ==========================================
-function applyCategoryMapping() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
-  const cfg = getOrSelectCompany(); if (!cfg) return;
-
-  const mapSheet = ss.getSheetByName(SHEET_CATEGORY_MAP);
-  if (!mapSheet) return ui.alert(`❌ '${SHEET_CATEGORY_MAP}' 시트가 없습니다. 먼저 매핑 시트 생성을 실행하세요.`);
-
-  const mapData = mapSheet.getDataRange().getValues().slice(1); // 헤더 제외
-
-  // 3열 레이아웃: A(LinkedIn 직책 원본값), B(→팀 표준값), C(→직책 표준값)
-  const teamMap = {}, posMap = {};
-  mapData.forEach(row => {
-    const origPos = String(row[0] || '').trim();
-    const stdTeam = String(row[1] || '').trim();
-    const stdPos  = String(row[2] || '').trim();
-    if (origPos === '(빈값)') {
-      // 빈 직책 행에 대한 매핑
-      if (stdTeam) teamMap[''] = stdTeam;
-      if (stdPos)  posMap['']  = stdPos;
-    } else if (origPos) {
-      if (stdTeam) teamMap[origPos] = stdTeam;
-      if (stdPos)  posMap[origPos]  = stdPos;
-    }
-  });
-
-  const sheet = ss.getSheetByName(cfg.sheet1Name);
-  if (!sheet) return ui.alert(`❌ '${cfg.sheet1Name}' 시트를 찾을 수 없습니다.`);
-
-  const tMap = getColMap(sheet);
-  const remColIdx  = tMap["리멤버 페이지"];   // 0-based
-  const liColIdx   = tMap["링크드인 페이지"]; // 0-based
-  const teamColIdx = tMap["팀"]   + 1;         // 1-based
-  const posColIdx  = tMap["직책"] + 1;         // 1-based
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return ui.alert('데이터가 없습니다.');
-
-  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  let updatedCount = 0;
-
-  data.forEach((row, i) => {
-    // LinkedIn 출처 행만 처리: C열 비어있고 D열 있는 행
-    const remVal = String(row[remColIdx] || '').trim();
-    const liVal  = String(row[liColIdx]  || '').trim();
-    if (remVal !== '' || liVal === '') return;
-
-    const rowNum = i + 2;
-    const origPos = String(row[tMap["직책"]] || '').trim();
-
-    if (teamMap[origPos] !== undefined) {
-      sheet.getRange(rowNum, teamColIdx).setValue(teamMap[origPos]);
-      updatedCount++;
-    }
-    if (posMap[origPos] !== undefined) {
-      sheet.getRange(rowNum, posColIdx).setValue(posMap[origPos]);
-      updatedCount++;
-    }
-  });
-
-  ui.alert(`✅ 완료: LinkedIn 출처 행 ${updatedCount}개 셀이 업데이트되었습니다.`);
+function extractAprStartDate(t) {
+  const m = String(t).match(/(\d{4}[.\-]\d{2})\s*~/);
+  return m ? m[1].replace('-', '.') : '-';
 }
 
-// ==========================================
-// ■ 데이터 수입
-// ==========================================
-function importLinkedInData() {
-  const ui = SpreadsheetApp.getUi();
-  try {
-    const cfg = getOrSelectCompany(); if (!cfg) return;
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSs = SpreadsheetApp.openById(cfg.linkedinSourceId);
-    const dataSheets = sourceSs.getSheets().slice(4);
-    const sheetList = dataSheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
-    const response = ui.prompt('📥 링크드인 시트 선택', sheetList, ui.ButtonSet.OK_CANCEL);
-    if (response.getSelectedButton() !== ui.Button.OK) return;
-    const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
-    const sourceData = selectedSheet.getDataRange().getValues().slice(1);
-    const sourceRichTexts = selectedSheet.getRange(2, 10, sourceData.length, 1).getRichTextValues();
-    // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
-    const ts2 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
-    const newSheet2Name = `linkedin_${selectedSheet.getName()}_${ts2}`;
-    const targetSheet = ss.insertSheet(newSheet2Name);
-    PropertiesService.getScriptProperties().setProperty(`sheet2Name_${cfg.name}`, newSheet2Name);
-    targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
-    const results = sourceData.map(row => [selectedSheet.getName(), row[0], "", "linkedin", "", "", row[1], "", row[2], row[4], row[3], row[10]]);
-    if (results.length > 0) {
-      targetSheet.getRange(2, 1, results.length, 12).setValues(results);
-      const richLinks = sourceRichTexts.map(rtRow => {
-        const url = rtRow[0] ? rtRow[0].getLinkUrl() : "";
-        return [url
-          ? SpreadsheetApp.newRichTextValue().setText("linkedin").setLinkUrl(url).build()
-          : SpreadsheetApp.newRichTextValue().setText("linkedin").build()];
-      });
-      targetSheet.getRange(2, 4, richLinks.length, 1).setRichTextValues(richLinks); // D열 (링크드인 페이지)
-    }
-  } catch (e) { ui.alert("오류: " + e.message); }
-}
-
-function importRememberData() {
-  const ui = SpreadsheetApp.getUi();
-  try {
-    const cfg = getOrSelectCompany(); if (!cfg) return;
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sourceSs = SpreadsheetApp.openById(cfg.rememberSourceId);
-    const dataSheets = sourceSs.getSheets().slice(4);
-    const sheetList = dataSheets.map((s, i) => `${i + 1}. ${s.getName()}`).join('\n');
-    const response = ui.prompt('📥 리멤버 시트 선택', sheetList, ui.ButtonSet.OK_CANCEL);
-    if (response.getSelectedButton() !== ui.Button.OK) return;
-    const selectedSheet = dataSheets[parseInt(response.getResponseText().trim()) - 1];
-    const sourceData = selectedSheet.getDataRange().getValues().slice(1);
-    const sourceRichTexts = selectedSheet.getRange(2, 2, sourceData.length, 1).getRichTextValues();
-    // 타임스탬프 기반 새 시트 생성 (기존 시트 덮어쓰기 방지)
-    const ts1 = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
-    const newSheet1Name = `Remember_${selectedSheet.getName()}_${ts1}`;
-    const targetSheet = ss.insertSheet(newSheet1Name);
-    PropertiesService.getScriptProperties().setProperty(`sheet1Name_${cfg.name}`, newSheet1Name);
-    targetSheet.appendRow(["회사명","이름","리멤버 페이지","링크드인 페이지","대분류(직무)","팀","직책","총 경력","재직 기간","이전 경력","학력","기준일"]);
-    const results = sourceData.map(row => [selectedSheet.getName(), row[0], "link", "", "", row[2], row[3], "", row[4], row[5], row[6], row[7]]);
-    if (results.length > 0) {
-      targetSheet.getRange(2, 1, results.length, 12).setValues(results);
-      const richLinks = sourceRichTexts.map(rtRow => {
-        const url = rtRow[0] ? rtRow[0].getLinkUrl() : "";
-        return [url
-          ? SpreadsheetApp.newRichTextValue().setText("link").setLinkUrl(url).build()
-          : SpreadsheetApp.newRichTextValue().setText("").build()];
-      });
-      targetSheet.getRange(2, 3, richLinks.length, 1).setRichTextValues(richLinks); // C열 (리멤버 페이지)
-    }
-  } catch (e) { ui.alert("오류: " + e.message); }
-}
-
-// ==========================================
-// ■ 유틸리티
-// ==========================================
-function translateNameColumn() {
-  const sheet = SpreadsheetApp.getActiveSheet(), tMap = getColMap(sheet);
-  const range = sheet.getRange(2, tMap["이름"] + 1, sheet.getLastRow() - 1, 1);
-  const newVals = range.getValues().map(row => {
-    let t = String(row[0]).trim();
-    if (t !== "" && !/[가-힣]/.test(t)) {
-      try { let tr = LanguageApp.translate(t, 'en', 'ko'); if (t !== tr) return [t + "\n" + tr]; } catch (e) {}
-    }
-    return [row[0]];
-  });
-  range.setValues(newVals);
-}
-
-function updateCurrentSheetCareer() {
-  const sheet = SpreadsheetApp.getActiveSheet(), tMap = getColMap(sheet);
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
-  const res = data.map(row => {
-    let t = 0;
-    const comb = (row[tMap["재직 기간"] || tMap["재직기간"]] || "").toString() + "\n" + (row[tMap["이전 경력"]] || "").toString();
-    const ms = [...comb.matchAll(/\((\d+년\s*\d+개월|\d+년|\d+개월)\)/g)];
-    ms.forEach(m => {
-      const y = m[1].match(/(\d+)년/), mo = m[1].match(/(\d+)개월/);
-      t += (y ? parseInt(y[1]) * 12 : 0) + (mo ? parseInt(mo[1]) : 0);
-    });
-    return [t > 0 ? (Math.floor(t / 12) > 0 ? `${Math.floor(t / 12)}년 ${t % 12}개월`.replace(' 0개월', '') : `${t % 12}개월`) : "-"];
-  });
-  sheet.getRange(2, tMap["총 경력"] + 1, res.length, 1).setValues(res);
-}
-
-function runRegionMapping() {
-  const sheet = SpreadsheetApp.getActiveSheet(), tMap = getColMap(sheet);
-  const results = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().map(row => {
-    const combined = (String(row[tMap["팀"]] || "") + " " + String(row[tMap["직책"]] || "")).toLowerCase();
-    const matched = [];
-    const rules = [
-      { region: "북미",      keywords: ["북미", "us", "미국", "america", "north america", "틱톡샵", "u.s"] },
-      { region: "일본",      keywords: ["일본", "japan", "jp", "일본사업", "일본 gtm"] },
-      { region: "한국",      keywords: ["한국", "korea", "kr", "국내", "한국사업"] },
-      { region: "동남아",    keywords: ["동남아", "동남아시아", "sea", "southeast asia"] },
-      { region: "중국/대만", keywords: ["중국", "china", "홍콩", "대만", "taiwan", "hong kong"] },
-      { region: "글로벌",    keywords: ["글로벌", "global", "해외", "유럽"] }
-    ];
-    rules.forEach(rule => { if (rule.keywords.some(kw => combined.includes(kw.toLowerCase()))) matched.push(rule.region); });
-    if (matched.length === 0) return ["NA"];
-    const specific = matched.filter(r => r !== "글로벌");
-    return [specific.length > 0 ? [...new Set(specific)].join("|") : "글로벌"];
-  });
-  const col = tMap["Region"] !== undefined ? tMap["Region"] + 1 : sheet.getLastColumn() + 1;
-  if (tMap["Region"] === undefined) sheet.getRange(1, col).setValue("Region");
-  sheet.getRange(2, col, results.length, 1).setValues(results);
-}
-
-// ==========================================
-// ■ [v20.0] 중복 탐지 헬퍼
-// ==========================================
-
-/**
- * [BUG FIX v20.0] 이전 경력에서 회사명 추출
- * 리멤버 포맷: [날짜] 회사명 | 팀 | 직책
- * 링크드인 포맷: [날짜] 회사명 - 직책
- * → | 또는 ' - ' 기준으로 첫 세그먼트(회사명)만 추출
- */
-function extractNonAprCompanies(text) {
-  return text.split('\n').map(line => {
-    const afterBracket = line.match(/\]\s*(.+)/);
-    if (!afterBracket) return '';
-    const content = afterBracket[1];
-    const pipeIdx  = content.indexOf('|');
-    const dashIdx  = content.indexOf(' - ');
-    let end = content.length;
-    if (pipeIdx >= 0) end = Math.min(end, pipeIdx);
-    if (dashIdx >= 0) end = Math.min(end, dashIdx);
-    return content.substring(0, end).trim();
-  }).filter(n => n.length > 0 && !isExcludedCompany(n));
-}
-
-function compareSurname(name1, name2) {
-  // Bottom-up: 마지막 줄(pop())이 국문 성함
-  const s1 = String(name1).trim().split('\n').pop().charAt(0);
-  const s2 = String(name2).trim().split('\n').pop().charAt(0);
-  return s1.length > 0 && s1 === s2;
+function compareSurname(n1, n2) {
+  const s1 = String(n1).trim().split('\n').pop().charAt(0);
+  const s2 = String(n2).trim().split('\n').pop().charAt(0);
+  return s1 !== "" && s1 === s2;
 }
 
 function comparePreviousCompanies(c1, c2) {
-  const cos1 = extractNonAprCompanies(String(c1));
-  const cos2 = extractNonAprCompanies(String(c2));
-  return cos1.length > 0 && cos2.length > 0 && cos1.some(a => cos2.some(b => isSimilarText(a, b)));
+  const x1 = extractNonAprCompanies(String(c1)), x2 = extractNonAprCompanies(String(c2));
+  return x1.some(a => x2.some(b => isSimilarText(a, b)));
+}
+
+function extractNonAprCompanies(t) {
+  return t.split('\n').map(l => {
+    const a = l.match(/\]\s*(.+)/); if (!a) return '';
+    const c = a[1], p = c.indexOf('|'), d = c.indexOf(' - ');
+    let e = c.length;
+    if (p >= 0) e = Math.min(e, p);
+    if (d >= 0) e = Math.min(e, d);
+    return c.substring(0, e).trim();
+  }).filter(n => n.length > 0 && !isExcludedCompany(n));
 }
 
 function compareEducation(e1, e2) {
   const s1 = extractSchools(String(e1)), s2 = extractSchools(String(e2));
-  return s1.length > 0 && s2.length > 0 && s1.some(a => s2.some(b => isSimilarText(a, b)));
+  return s1.some(a => s2.some(b => isSimilarText(a, b)));
 }
 
-function extractAprStartDate(text) {
-  // 재직 기간에서 입사년월(YYYY.MM) 추출 — Gate 조건으로 사용
-  const m = String(text).match(/(\d{4}[.\-]\d{2})\s*~/);
-  return m ? m[1].replace('-', '.') : '-';
-}
-
-function extractSchools(text) {
-  return text.split('\n').map(line => {
-    const m = line.match(/^(.+?)\s*-\s*/);
-    return m ? m[1].trim() : '';
-  }).filter(s => s.length > 0);
+function extractSchools(t) {
+  return t.split('\n').map(l => { const m = l.match(/^(.+?)\s*-\s*/); return m ? m[1].trim() : ''; }).filter(s => s.length > 0);
 }
 
 function isSimilarText(a, b) {
-  const n1 = norm(a), n2 = norm(b);
+  const n1 = a.toLowerCase().replace(/[\s\-_·.,()]/g, '');
+  const n2 = b.toLowerCase().replace(/[\s\-_·.,()]/g, '');
   return n1.length >= 2 && n2.length >= 2 && (n1.includes(n2) || n2.includes(n1));
 }
 
-function norm(s) {
-  return s.toLowerCase().replace(/[\s\-_·.,()（）\[\]]/g, '').trim();
+function updateCurrentSheetCareer() {
+  const s = SpreadsheetApp.getActiveSheet(), t = getColMap(s);
+  const d = s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues();
+  const res = d.map(r => {
+    let tot = 0;
+    const comb = String(r[t["재직 기간"] !== undefined ? t["재직 기간"] : t["재직기간"]] || "") + "\n" + String(r[t["이전 경력"]] || "");
+    [...comb.matchAll(/\((\d+년\s*\d+개월|\d+년|\d+개월)\)/g)].forEach(m => {
+      const y = m[1].match(/(\d+)년/), mo = m[1].match(/(\d+)개월/);
+      tot += (y ? parseInt(y[1]) * 12 : 0) + (mo ? parseInt(mo[1]) : 0);
+    });
+    return [tot > 0 ? (Math.floor(tot / 12) > 0 ? `${Math.floor(tot / 12)}년 ${tot % 12}개월`.replace(' 0개월', '') : `${tot % 12}개월`) : "-"];
+  });
+  s.getRange(2, t["총 경력"] + 1, res.length, 1).setValues(res);
 }
 
-function extractPrevCompanySummary(text) {
-  const cos = extractNonAprCompanies(String(text));
-  return cos.length > 0 ? cos.slice(0, 2).join(', ') : '-';
+function runRegionMapping() {
+  const s = SpreadsheetApp.getActiveSheet(), t = getColMap(s);
+  const res = s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).getValues().map(r => {
+    const c = (String(r[t["팀"]] || "") + " " + String(r[t["직책"]] || "")).toLowerCase(), m = [];
+    [
+      {r:"북미",  k:["북미","us ","usa","미국","틱톡샵","north america","northamerica"]},
+      {r:"일본",  k:["일본","japan","jp "]},
+      {r:"한국",  k:["한국","korea","kr "]},
+      {r:"SEA",   k:["sea","동남아","southeast asia","싱가포르","베트남","태국","인도네시아","말레이시아","필리핀","singapore","vietnam","thailand","indonesia","malaysia"]},
+      {r:"MENA",  k:["mena","중동","두바이","uae","사우디","middle east","north africa"]},
+      {r:"LATAM", k:["latam","중남미","라틴아메리카","latin america","브라질","멕시코","brazil","mexico"]},
+      {r:"CIS",   k:["cis","러시아","카자흐스탄","russia","kazakhstan","중앙아시아"]},
+      {r:"호주",  k:["호주","australia","aus","오세아니아","oceania"]},
+      {r:"유럽",  k:["유럽","europe","eu ","영국","독일","프랑스","uk ","germany","france"]},
+      {r:"중국",  k:["중국","china","cn ","차이나"]},
+      {r:"글로벌",k:["글로벌","global"]}
+    ].forEach(rule => { if (rule.k.some(kw => c.includes(kw))) m.push(rule.r); });
+    return [m.length > 0 ? [...new Set(m.filter(x => x !== "글로벌"))].join("|") || "글로벌" : "NA"];
+  });
+  const col = t["Region"] !== undefined ? t["Region"] + 1 : s.getLastColumn() + 1;
+  if (t["Region"] === undefined) s.getRange(1, col).setValue("Region");
+  s.getRange(2, col, res.length, 1).setValues(res);
 }
-
-function extractSchoolSummary(eduText) {
-  const schs = extractSchools(String(eduText));
-  return schs.length > 0 ? schs[0] : '-';
-}
-
-// ==========================================
-// ■ 공통 유틸
-// ==========================================
-function getColMap(sheet) {
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const map = {};
-  headers.forEach((v, i) => map[v.toString().trim()] = i);
-  return map;
-}
-
-function getColIndex(headers, name, sheetName) {
-  const i = headers.indexOf(name);
-  if (i === -1) throw new Error(`'${sheetName}'에서 '${name}' 컬럼 누락`);
-  return i;
-}
-
-function getOrSelectCompany() {
-  const props = PropertiesService.getScriptProperties();
-  let saved = props.getProperty('selectedCompany');
-  if (!saved || !COMPANY_CONFIG[saved]) {
-    const ui = SpreadsheetApp.getUi(), cos = Object.keys(COMPANY_CONFIG);
-    const res = ui.prompt('🏢 회사 선택', cos.map((c, i) => `${i + 1}. ${c}`).join('\n'), ui.ButtonSet.OK_CANCEL);
-    if (res.getSelectedButton() !== ui.Button.OK) return null;
-    saved = cos[parseInt(res.getResponseText()) - 1];
-    props.setProperty('selectedCompany', saved);
-  }
-  const cfg = { name: saved, ...COMPANY_CONFIG[saved] };
-  // 최근 import로 생성된 동적 시트명이 있으면 오버라이드 (타임스탬프 시트 반영)
-  const dynSheet1 = props.getProperty(`sheet1Name_${saved}`);
-  const dynSheet2 = props.getProperty(`sheet2Name_${saved}`);
-  if (dynSheet1) cfg.sheet1Name = dynSheet1;
-  if (dynSheet2) cfg.sheet2Name = dynSheet2;
-  return cfg;
-}
-
 
 function clearAllColors() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const s = ss.getSheetByName(SHEET_DUP_REPORT);
-  if (s) s.clear();
+  [SHEET_DUP_REPORT, SHEET_CATEGORY_MAP].forEach(n => { const s = ss.getSheetByName(n); if (s) s.clear(); });
 }
 
+// ── [☁️ Supabase 동기화] ──────────────────────
 
-// ==========================================
-// ■ [v21.0] Supabase 동기화
-// ==========================================
-
-/**
- * 현재 활성화된 통합_ 시트의 데이터를 Supabase talent_profiles 테이블에 동기화.
- * 실행 전 GAS 스크립트 속성에 SUPABASE_SERVICE_KEY 설정 필요.
- * (스크립트 편집기 → 프로젝트 설정 → 스크립트 속성 → 추가)
- */
 function syncCurrentSheetToSupabase() {
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSheet();
@@ -979,108 +710,66 @@ function syncCurrentSheetToSupabase() {
 
   const serviceKey = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
   if (!serviceKey) {
-    ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다.\n\n스크립트 편집기 → 프로젝트 설정 → 스크립트 속성에서 추가하세요.");
+    ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다.\n스크립트 편집기 → 프로젝트 설정 → 스크립트 속성에서 추가하세요.");
     return;
   }
 
   const headers = {
-    'apikey': serviceKey,
-    'Authorization': 'Bearer ' + serviceKey,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=minimal'
+    'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
   };
 
-  // 1. 기존 데이터 삭제 (해당 source_sheet만)
   const deleteRes = UrlFetchApp.fetch(
     SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
     { method: 'delete', headers: headers, muteHttpExceptions: true }
   );
-  if (deleteRes.getResponseCode() >= 300) {
-    ui.alert('❌ 삭제 오류:\n' + deleteRes.getContentText());
-    return;
-  }
+  if (deleteRes.getResponseCode() >= 300) { ui.alert('❌ 삭제 오류:\n' + deleteRes.getContentText()); return; }
 
-  // 2. 시트 데이터 추출
   const rows = _extractSheetForSupabase(sheet, sheetName);
-  if (rows.length === 0) {
-    ui.alert('동기화할 데이터가 없습니다. (이름 열이 비어 있음)');
-    return;
-  }
+  if (rows.length === 0) { ui.alert('동기화할 데이터가 없습니다.'); return; }
 
-  // 3. Supabase INSERT (500건씩 배치)
   const BATCH_SIZE = 500;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const insertRes = UrlFetchApp.fetch(
-      SUPABASE_URL + '/rest/v1/talent_profiles',
-      { method: 'post', headers: headers, payload: JSON.stringify(batch), muteHttpExceptions: true }
-    );
-    if (insertRes.getResponseCode() >= 300) {
-      ui.alert('❌ 삽입 오류 (배치 ' + (i / BATCH_SIZE + 1) + '):\n' + insertRes.getContentText());
-      return;
-    }
+    const res = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/talent_profiles', {
+      method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + BATCH_SIZE)), muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) { ui.alert('❌ 삽입 오류:\n' + res.getContentText()); return; }
   }
-
-  ui.alert('✅ Supabase 동기화 완료\n시트: ' + sheetName + '\n총 ' + rows.length + '건 업로드');
+  ui.alert('✅ Supabase 동기화 완료\n시트: ' + sheetName + '\n총 ' + rows.length + '건');
 }
 
 function syncAllSheetsToSupabase() {
   const ui = SpreadsheetApp.getUi();
   const serviceKey = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
-  if (!serviceKey) {
-    ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다.\n\n스크립트 편집기 → 프로젝트 설정 → 스크립트 속성에서 추가하세요.");
-    return;
-  }
+  if (!serviceKey) { ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다."); return; }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetSheets = ss.getSheets().filter(s => s.getName().startsWith("통합_"));
-
-  if (targetSheets.length === 0) {
-    ui.alert("통합_ 시트가 없습니다.");
-    return;
-  }
+  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_"));
+  if (targets.length === 0) { ui.alert("통합_ 시트가 없습니다."); return; }
 
   const headers = {
-    'apikey': serviceKey,
-    'Authorization': 'Bearer ' + serviceKey,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=minimal'
+    'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
   };
-
   const results = [];
-  for (const sheet of targetSheets) {
-    const sheetName = sheet.getName();
 
-    // 기존 데이터 삭제
-    const deleteRes = UrlFetchApp.fetch(
+  for (const sheet of targets) {
+    const sheetName = sheet.getName();
+    const delRes = UrlFetchApp.fetch(
       SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
       { method: 'delete', headers: headers, muteHttpExceptions: true }
     );
-    if (deleteRes.getResponseCode() >= 300) {
-      results.push('❌ ' + sheetName + ' 삭제 오류: ' + deleteRes.getContentText());
-      continue;
-    }
+    if (delRes.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 삭제 오류'); continue; }
 
-    // 데이터 추출
     const rows = _extractSheetForSupabase(sheet, sheetName);
-    if (rows.length === 0) {
-      results.push('⚠️ ' + sheetName + ': 데이터 없음 (건너뜀)');
-      continue;
-    }
+    if (rows.length === 0) { results.push('⚠️ ' + sheetName + ': 데이터 없음'); continue; }
 
-    // INSERT (500건 배치)
     let failed = false;
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const insertRes = UrlFetchApp.fetch(
-        SUPABASE_URL + '/rest/v1/talent_profiles',
-        { method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + BATCH_SIZE)), muteHttpExceptions: true }
-      );
-      if (insertRes.getResponseCode() >= 300) {
-        results.push('❌ ' + sheetName + ' 삽입 오류: ' + insertRes.getContentText());
-        failed = true;
-        break;
-      }
+    for (let i = 0; i < rows.length; i += 500) {
+      const res = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/talent_profiles', {
+        method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + 500)), muteHttpExceptions: true
+      });
+      if (res.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 삽입 오류'); failed = true; break; }
     }
     if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건');
   }
@@ -1092,46 +781,39 @@ function _extractSheetForSupabase(sheet, sheetName) {
   const tMap = getColMap(sheet);
   const range = sheet.getDataRange();
   const values = range.getValues();
-  const richTextValues = range.getRichTextValues();
-  const rows = [];
-  const now = new Date().toISOString();
+  const rts = range.getRichTextValues();
+  const rows = [], now = new Date().toISOString();
 
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
     const name = (r[tMap["이름"]] || "").toString().trim();
     if (!name) continue;
-
     const tenureStr = (r[tMap["재직 기간"]] || "").toString().trim();
-    const tenureStartMatch = tenureStr.match(/(\d{4}\.\d{2})/);
-
+    const tsM = tenureStr.match(/(\d{4}\.\d{2})/);
     rows.push({
-      source_sheet:  sheetName,
-      company:       (r[tMap["회사명"]]       || "").toString().trim(),
-      name:          name,
-      remember_url:  _extractRichUrl(richTextValues[i][tMap["리멤버 페이지"]]),
-      linkedin_url:  _extractRichUrl(richTextValues[i][tMap["링크드인 페이지"]]),
-      job_category:  (r[tMap["대분류(직무)"]] || "").toString().trim(),
-      team:          (r[tMap["팀"]]            || "").toString().trim(),
-      role:          (r[tMap["직책"]]          || "").toString().trim(),
-      total_career:  (r[tMap["총 경력"]]       || "").toString().trim(),
-      tenure:        tenureStr,
-      tenure_start:  tenureStartMatch ? tenureStartMatch[1] : "",
-      prev_career:   (r[tMap["이전 경력"]]    || "").toString().trim(),
-      education:     (r[tMap["학력"]]          || "").toString().trim(),
-      region:        (r[tMap["Region"]]        || "").toString().trim(),
-      synced_at:     now
+      source_sheet: sheetName,
+      company:      (r[tMap["회사명"]]       || "").toString().trim(),
+      name:         name,
+      remember_url: _extractRichUrl(rts[i][tMap["리멤버 페이지"]]),
+      linkedin_url: _extractRichUrl(rts[i][tMap["링크드인 페이지"]]),
+      job_category: (r[tMap["대분류(직무)"]] || "").toString().trim(),
+      team:         (r[tMap["팀"]]            || "").toString().trim(),
+      role:         (r[tMap["직책"]]          || "").toString().trim(),
+      total_career: (r[tMap["총 경력"]]       || "").toString().trim(),
+      tenure:       tenureStr,
+      tenure_start: tsM ? tsM[1] : "",
+      prev_career:  (r[tMap["이전 경력"]]    || "").toString().trim(),
+      education:    (r[tMap["학력"]]          || "").toString().trim(),
+      region:       (r[tMap["Region"]]        || "").toString().trim(),
+      synced_at:    now
     });
   }
   return rows;
 }
 
-function _extractRichUrl(richTextValue) {
-  if (!richTextValue) return "";
-  const main = richTextValue.getLinkUrl();
-  if (main) return main;
-  for (const run of richTextValue.getRuns()) {
-    const link = run.getLinkUrl();
-    if (link) return link;
-  }
+function _extractRichUrl(rt) {
+  if (!rt) return "";
+  const main = rt.getLinkUrl(); if (main) return main;
+  for (const run of rt.getRuns()) { const l = run.getLinkUrl(); if (l) return l; }
   return "";
 }

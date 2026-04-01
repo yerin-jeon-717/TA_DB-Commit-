@@ -44,12 +44,14 @@ CREATE INDEX IF NOT EXISTS idx_talent_job_category ON talent_profiles (job_categ
 ALTER TABLE talent_profiles ENABLE ROW LEVEL SECURITY;
 
 -- 공개 읽기 허용 (anon key — 프론트엔드 직접 조회용)
+DROP POLICY IF EXISTS "public read" ON talent_profiles;
 CREATE POLICY "public read"
   ON talent_profiles FOR SELECT
   TO anon
   USING (true);
 
 -- service_role은 모든 작업 허용 (GAS sync용)
+DROP POLICY IF EXISTS "service full access" ON talent_profiles;
 CREATE POLICY "service full access"
   ON talent_profiles FOR ALL
   TO service_role

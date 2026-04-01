@@ -161,6 +161,58 @@
     }
     .f-input::placeholder { color: var(--text3); }
 
+    /* 멀티 키워드 검색 박스 */
+    .multi-search-box {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 7px 10px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      cursor: text;
+      transition: border-color 0.18s, box-shadow 0.18s;
+      min-height: 40px;
+      align-items: center;
+    }
+    .multi-search-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,195,176,0.25);
+    }
+    .multi-search-box input {
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text);
+      flex: 1;
+      min-width: 80px;
+      padding: 2px 2px;
+    }
+    .multi-search-box input::placeholder { color: var(--text3); }
+    .search-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background: var(--tag-bg);
+      color: var(--accent-deep);
+      border: 1px solid rgba(201,107,74,0.2);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .search-tag .tag-x {
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      opacity: 0.6;
+      margin-left: 1px;
+    }
+    .search-tag .tag-x:hover { opacity: 1; }
+
     /* 검색 가능한 드롭다운 */
     .searchable-select { position: relative; }
     .searchable-select .ss-input {
@@ -363,6 +415,25 @@
       box-shadow: 0 6px 20px rgba(255,195,176,0.25);
       transform: translateY(-2px);
     }
+    @keyframes cardHighlight {
+      0%   { box-shadow: 0 0 0 3px var(--accent-deep); border-color: var(--accent-deep); }
+      70%  { box-shadow: 0 0 0 3px var(--accent-deep); border-color: var(--accent-deep); }
+      100% { box-shadow: none; border-color: var(--border); }
+    }
+    .card.highlighted { animation: cardHighlight 2s ease forwards; }
+    .link-copy-btn {
+      width: 29px; height: 29px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      color: var(--text3);
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .link-copy-btn:hover { border-color: var(--accent-dark); color: var(--accent-deep); background: var(--tag-bg); }
     .card-header {
       display: flex;
       align-items: flex-start;
@@ -658,9 +729,9 @@
     .bookmark-empty .empty-icon { font-size: 36px; margin-bottom: 12px; }
     .bookmark-item {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 11px 12px;
       border-radius: 10px;
       border: 1px solid var(--border);
       margin-bottom: 8px;
@@ -668,24 +739,67 @@
       transition: border-color 0.15s;
     }
     .bookmark-item:hover { border-color: var(--accent-dark); }
-    .bookmark-item .bk-avatar {
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      background: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700; color: white;
+    .bookmark-item.checked { border-color: var(--accent-deep); background: #fff8f5; }
+
+    /* 체크박스 */
+    .bk-checkbox {
+      width: 16px; height: 16px;
+      margin-top: 3px;
+      accent-color: var(--accent-deep);
+      cursor: pointer;
       flex-shrink: 0;
     }
+
     .bookmark-item .bk-info { flex: 1; min-width: 0; }
     .bookmark-item .bk-name {
-      font-size: 13px; font-weight: 600;
-      color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 13px; font-weight: 700;
+      color: var(--text);
+      margin-bottom: 2px;
     }
     .bookmark-item .bk-sub {
-      font-size: 11px; color: var(--text3);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      margin-top: 2px;
+      font-size: 12px; color: var(--text2);
+      margin-bottom: 4px;
     }
+    .bookmark-item .bk-meta {
+      font-size: 11px; color: var(--text3);
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+
+    /* 인재 박스 우측 액션 버튼들 */
+    .bk-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .bk-link-btn {
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700;
+      color: var(--text2);
+      text-decoration: none;
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .bk-link-btn:hover { border-color: var(--accent-dark); color: var(--accent-deep); background: var(--tag-bg); }
+    .bk-link-btn.disabled { opacity: 0.25; pointer-events: none; }
+    .bk-copy-single {
+      width: 24px; height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: none;
+      font-size: 12px;
+      color: var(--text3);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .bk-copy-single:hover { border-color: var(--accent-dark); color: var(--accent-deep); background: var(--tag-bg); }
     .bk-remove {
       width: 24px; height: 24px;
       border: none; background: none;
@@ -715,6 +829,21 @@
       transition: all 0.15s;
     }
     .bk-clear-btn:hover { border-color: var(--red); color: var(--red); }
+    .bk-copy-btn {
+      flex: 1;
+      padding: 9px;
+      border: 1.5px solid var(--accent-dark);
+      border-radius: 8px;
+      background: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-deep);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .bk-copy-btn:hover { background: var(--tag-bg); }
+    .bk-copy-btn.copied { background: var(--tag-bg); border-color: var(--accent-deep); }
 
     /* 헤더 북마크 버튼 */
     .header-bookmark-btn {
@@ -826,9 +955,8 @@
 </head>
 <body>
   <header>
-    <div class="logo-mark"></div>
+    <div class="logo-mark"><img src="Biodance_logo_bgcolor.jpg" alt="logo" /></div>
     <h1>뷰티셀렉션 <span>인재풀</span></h1>
-    <div class="result-count" id="resultCount">총 <b>0</b>명</div>
     <button class="header-bookmark-btn" id="headerBookmarkBtn">
       북마크
       <span class="hb-count" id="headerBookmarkCount">0</span>
@@ -837,7 +965,7 @@
   </header>
 
   <!-- 로그인 오버레이 -->
-  <div class="login-overlay" id="loginOverlay">
+  <div class="login-overlay" id="loginOverlay" style="display:none">
     <div class="login-card">
       <div class="login-logo">
         <div class="logo-mark"></div>
@@ -863,18 +991,20 @@
     <aside>
       <div class="filter-section">
         <div class="filter-label">통합 검색</div>
-        <input id="searchInput" class="f-input" placeholder="이름, 회사, 직무, 팀, 직책 등" />
+        <div class="multi-search-box" id="multiSearchBox">
+          <input id="searchInput" placeholder="키워드 입력 후 Enter" autocomplete="off" />
+        </div>
       </div>
 
       <div class="filter-section">
         <div class="filter-label">이름</div>
-        <input id="nameInput" class="f-input" placeholder="이름으로 검색" />
+        <input id="nameInput" class="f-input" placeholder="이름으로 검색" autocomplete="off" />
       </div>
 
       <div class="filter-section">
         <div class="filter-label">회사</div>
         <div id="companySelect" class="searchable-select">
-          <input class="ss-input" type="text" placeholder="회사 선택 또는 검색" />
+          <input class="ss-input" type="text" autocomplete="off" placeholder="회사 선택 또는 검색" />
           <span class="ss-arrow">▼</span>
           <div class="ss-dropdown"></div>
         </div>
@@ -884,50 +1014,22 @@
       <div class="filter-section">
         <div class="filter-label">직무</div>
         <div id="jobSelect" class="searchable-select">
-          <input class="ss-input" type="text" placeholder="직무 선택 또는 검색" />
+          <input class="ss-input" type="text" autocomplete="off" placeholder="직무 선택 또는 검색" />
           <span class="ss-arrow">▼</span>
           <div class="ss-dropdown"></div>
         </div>
         <div id="jobBadgeContainer"></div>
       </div>
 
-      <div class="filter-section">
-        <div class="filter-label">팀</div>
-        <div id="teamSelect" class="searchable-select">
-          <input class="ss-input" type="text" placeholder="팀 선택 또는 검색" />
-          <span class="ss-arrow">▼</span>
-          <div class="ss-dropdown"></div>
-        </div>
-        <div id="teamBadgeContainer"></div>
-      </div>
-
-      <div class="filter-section">
-        <div class="filter-label">직책</div>
-        <div id="roleSelect" class="searchable-select">
-          <input class="ss-input" type="text" placeholder="직책 선택 또는 검색" />
-          <span class="ss-arrow">▼</span>
-          <div class="ss-dropdown"></div>
-        </div>
-        <div id="roleBadgeContainer"></div>
-      </div>
-
       <!-- [FIX] Region: 텍스트 입력 → searchable-select 드롭다운 -->
       <div class="filter-section">
         <div class="filter-label">Region</div>
         <div id="regionSelect" class="searchable-select">
-          <input class="ss-input" type="text" placeholder="Region 선택 또는 검색" />
+          <input class="ss-input" type="text" autocomplete="off" placeholder="Region 선택 또는 검색" />
           <span class="ss-arrow">▼</span>
           <div class="ss-dropdown"></div>
         </div>
         <div id="regionBadgeContainer"></div>
-      </div>
-
-      <div class="filter-section">
-        <div class="filter-label">옵션</div>
-        <div id="internSidebarToggle" class="toggle-row">
-          <div class="toggle-label">인턴 제외</div>
-          <div class="toggle-switch"></div>
-        </div>
       </div>
 
       <button id="resetBtn" class="reset-btn">필터 초기화</button>
@@ -941,8 +1043,6 @@
         <button class="sort-btn" data-sort="old_join">입사일 오래된 순</button>
         <button class="sort-btn" data-sort="career_desc">총 경력 긴 순</button>
         <button class="sort-btn" data-sort="career_asc">총 경력 짧은 순</button>
-        <button class="sort-btn" data-sort="company">회사명</button>
-        <button class="sort-btn" data-sort="name">이름</button>
         <div class="intern-toggle" id="internToggle">
           <div class="intern-toggle-label">인턴 제외</div>
           <div class="intern-toggle-switch"></div>
@@ -958,11 +1058,13 @@
     <div class="bookmark-drawer-header">
       <h2>북마크한 인재</h2>
       <div class="bk-count" id="bookmarkCount">0명</div>
+      <button class="bk-select-all-btn" id="bkSelectAllBtn" style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:12px;background:none;color:var(--text2);cursor:pointer;font-family:inherit;">전체 선택</button>
       <button class="bookmark-close" id="bookmarkCloseBtn">×</button>
     </div>
     <div class="bookmark-list" id="bookmarkList"></div>
     <div class="bookmark-footer">
-      <button class="bk-clear-btn" id="bookmarkClearBtn">모든 북마크 삭제</button>
+      <button class="bk-copy-btn" id="bookmarkCopyBtn">📋 링크 복사</button>
+      <button class="bk-clear-btn" id="bookmarkClearBtn">삭제</button>
     </div>
   </div>
   <div class="bookmark-overlay" id="bookmarkOverlay"></div>
@@ -982,9 +1084,10 @@
     function showLogin() { loginOverlay.style.display = 'flex'; }
     function hideLogin() { loginOverlay.style.display = 'none'; }
 
-    sb.auth.onAuthStateChange((event, session) => {
-      if (session) { hideLogin(); }
-      else { showLogin(); }
+    // SIGNED_IN: 로그인 성공 시 → 데이터 로드
+    // SIGNED_OUT: 로그아웃 시 → 페이지 새로고침 (가장 확실한 상태 초기화)
+    sb.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') window.location.reload();
     });
 
     loginBtn.addEventListener('click', async () => {
@@ -998,6 +1101,9 @@
         loginError.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
         loginBtn.disabled = false;
         loginBtn.textContent = '로그인';
+      } else {
+        hideLogin();
+        await init();
       }
     });
 
@@ -1012,30 +1118,28 @@
 
     let RAWDATA = [];
     let filterData = [];
-    const PAGESIZE = 20;
+    const PAGESIZE = 24;
     let currentPage = 1;
     let currentSort = "default";
     let selectedCompanyTab = "ALL";
-    // [FIX] 인턴 제외 토글 상태 단일화 (정렬바 + 사이드바 동기화)
     let excludeIntern = false;
     let selectedCompany = null;
     let selectedJob = null;
-    let selectedTeam = null;
-    let selectedRole = null;
     let selectedRegion = null;
+    let searchKeywords = []; // 멀티 키워드
     let bookmarks = [];
+    let checkedBookmarks = new Set(); // 체크된 북마크 ID
 
     const cardsGrid = document.getElementById("cardsGrid");
     const paginationEl = document.getElementById("pagination");
     const companyTabsEl = document.getElementById("companyTabs");
-    const resultCountEl = document.getElementById("resultCount").querySelector("b");
 
-    const searchInput = document.getElementById("searchInput");
+    const searchInput   = document.getElementById("searchInput");
+    const multiSearchBox = document.getElementById("multiSearchBox");
     const nameInput = document.getElementById("nameInput");
 
     const resetBtn = document.getElementById("resetBtn");
     const internToggleEl = document.getElementById("internToggle");
-    const internSidebarToggleEl = document.getElementById("internSidebarToggle");
 
     const bookmarkDrawer = document.getElementById("bookmarkDrawer");
     const bookmarkOverlay = document.getElementById("bookmarkOverlay");
@@ -1043,18 +1147,15 @@
     const bookmarkCountEl = document.getElementById("bookmarkCount");
     const bookmarkCloseBtn = document.getElementById("bookmarkCloseBtn");
     const bookmarkClearBtn = document.getElementById("bookmarkClearBtn");
+    const bookmarkCopyBtn  = document.getElementById("bookmarkCopyBtn");
     const headerBookmarkBtn = document.getElementById("headerBookmarkBtn");
     const headerBookmarkCount = document.getElementById("headerBookmarkCount");
 
     const companySelect = document.getElementById("companySelect");
     const jobSelect = document.getElementById("jobSelect");
-    const teamSelect = document.getElementById("teamSelect");
-    const roleSelect = document.getElementById("roleSelect");
     const regionSelect = document.getElementById("regionSelect");
     const companyBadgeContainer = document.getElementById("companyBadgeContainer");
     const jobBadgeContainer = document.getElementById("jobBadgeContainer");
-    const teamBadgeContainer = document.getElementById("teamBadgeContainer");
-    const roleBadgeContainer = document.getElementById("roleBadgeContainer");
     const regionBadgeContainer = document.getElementById("regionBadgeContainer");
 
     // ---------- 유틸 ----------
@@ -1077,6 +1178,47 @@
         timer = setTimeout(() => fn(...args), delay);
       };
     }
+
+    function renderSearchTags() {
+      // 기존 태그 제거 (input은 남김)
+      multiSearchBox.querySelectorAll(".search-tag").forEach(t => t.remove());
+      searchKeywords.forEach((kw, idx) => {
+        const tag = document.createElement("span");
+        tag.className = "search-tag";
+        tag.innerHTML = `${esc(kw)}<span class="tag-x" data-idx="${idx}">×</span>`;
+        tag.querySelector(".tag-x").addEventListener("click", () => {
+          searchKeywords.splice(idx, 1);
+          renderSearchTags();
+          currentPage = 1;
+          update();
+        });
+        multiSearchBox.insertBefore(tag, searchInput);
+      });
+    }
+
+    // 박스 클릭 시 input 포커스
+    multiSearchBox.addEventListener("click", () => searchInput.focus());
+
+    // Enter 키로 키워드 확정
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const kw = searchInput.value.trim().toLowerCase();
+        if (kw && !searchKeywords.includes(kw)) {
+          searchKeywords.push(kw);
+          renderSearchTags();
+        }
+        searchInput.value = "";
+        currentPage = 1;
+        update();
+        e.preventDefault();
+      } else if (e.key === "Backspace" && searchInput.value === "" && searchKeywords.length > 0) {
+        // 빈 상태에서 백스페이스 → 마지막 태그 삭제
+        searchKeywords.pop();
+        renderSearchTags();
+        currentPage = 1;
+        update();
+      }
+    });
 
     function showSkeleton() {
       cardsGrid.innerHTML = "";
@@ -1255,24 +1397,22 @@
       renderBadge();
     }
 
-    // [FIX] 인턴 제외 토글 단일화 — 정렬바·사이드바 모두 동기화
     function setExcludeIntern(val) {
       excludeIntern = val;
       internToggleEl.classList.toggle("active", val);
-      internSidebarToggleEl.classList.toggle("active", val);
     }
 
     function applyFilters() {
-      const q = (searchInput.value || "").trim().toLowerCase();
       const nameQ = (nameInput.value || "").trim().toLowerCase();
+      // 입력 중인 텍스트도 임시 키워드로 포함
+      const inputQ = (searchInput.value || "").trim().toLowerCase();
+      const allKeywords = inputQ ? [...searchKeywords, inputQ] : searchKeywords;
 
       filterData = RAWDATA.filter((p) => {
         if (selectedCompanyTab !== "ALL" && (p.company || "기타") !== selectedCompanyTab) return false;
         if (selectedCompany && (p.company || "") !== selectedCompany) return false;
         if (selectedJob && (p.job || "") !== selectedJob) return false;
-        if (selectedTeam && (p.team || "") !== selectedTeam) return false;
-        if (selectedRole && (p.role || "") !== selectedRole) return false;
-        if (selectedRegion && (p.region || "") !== selectedRegion) return false;
+        if (selectedRegion && !(p.region || "").split("|").includes(selectedRegion)) return false;
 
         if (excludeIntern) {
           const role = (p.role || "").toLowerCase();
@@ -1283,19 +1423,16 @@
 
         if (nameQ && !(p.name || "").toLowerCase().includes(nameQ)) return false;
 
-        if (!q) return true;
+        if (allKeywords.length === 0) return true;
         const hay = [p.name, p.company, p.job, p.team, p.role,
                      p.prev_career_raw, p.education, p.region]
           .join(" ").toLowerCase();
-        return hay.includes(q);
+        // 모든 키워드가 매칭되어야 함 (AND)
+        return allKeywords.every(kw => hay.includes(kw));
       });
 
       // 정렬
-      if (currentSort === "company") {
-        filterData.sort((a, b) => (a.company || "").localeCompare(b.company || ""));
-      } else if (currentSort === "name") {
-        filterData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-      } else if (currentSort === "career_desc") {
+      if (currentSort === "career_desc") {
         // [FIX] 총 개월 수 기준 비교
         filterData.sort((a, b) => parseCareerToMonths(b.total_career) - parseCareerToMonths(a.total_career));
       } else if (currentSort === "career_asc") {
@@ -1319,7 +1456,6 @@
         });
       }
 
-      resultCountEl.textContent = filterData.length;
     }
 
     function renderCards() {
@@ -1342,6 +1478,7 @@
       pageItems.forEach((p) => {
         const card = document.createElement("div");
         card.className = "card";
+        card.dataset.supabaseId = p.supabase_id;
         const isBookmarked = bookmarks.includes(p.id);
 
         // [FIX] 이전 경력 라인에서 회사명 파싱
@@ -1356,7 +1493,6 @@
         // [FIX] esc() 적용으로 XSS 방지
         card.innerHTML = `
           <div class="card-header">
-            <div class="avatar">${esc((p.name || "?").charAt(0))}</div>
             <div>
               <div class="card-name">
                 ${esc(p.name)}
@@ -1370,6 +1506,7 @@
               </button>
               <a class="link-btn ${p.remember ? "" : "disabled"}" href="${esc(p.remember || "#")}" target="_blank" rel="noopener noreferrer" title="리멤버 페이지">R</a>
               <a class="link-btn ${p.linkedin ? "" : "disabled"}" href="${esc(p.linkedin || "#")}" target="_blank" rel="noopener noreferrer" title="링크드인">in</a>
+              <button class="link-copy-btn" data-sid="${esc(p.supabase_id)}" title="이 인재 링크 복사">🔗</button>
             </div>
           </div>
           <div class="card-divider"></div>
@@ -1404,11 +1541,7 @@
             </div>
             <div class="info-item">
               <div class="info-item-label">Region</div>
-              <div class="info-item-value">${esc(p.region) || "-"}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-item-label">소스 시트</div>
-              <div class="info-item-value">${esc(p.source_sheet) || "-"}</div>
+              <div class="info-item-value">${(p.region && p.region.toUpperCase() !== "NA") ? esc(p.region) : "-"}</div>
             </div>
           </div>
         `;
@@ -1420,7 +1553,42 @@
         btn.addEventListener("click", () => toggleBookmark(btn.dataset.id));
       });
 
+      // 🔗 링크 복사 버튼 — 이벤트 위임으로 단일 처리
+      cardsGrid.querySelectorAll(".link-copy-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const sid = btn.dataset.sid;
+          if (!sid) return;
+          const url = `${location.origin}${location.pathname}?person=${sid}`;
+          navigator.clipboard.writeText(url).then(() => {
+            btn.textContent = "✅";
+            setTimeout(() => { btn.textContent = "🔗"; }, 1500);
+          });
+        });
+      });
+
       renderPagination();
+    }
+
+    function scrollToPersonCard(sid) {
+      if (!sid) return;
+      // 해당 인재가 현재 페이지에 있으면 스크롤, 없으면 filterData에서 찾아 페이지 이동
+      const tryScroll = () => {
+        const el = cardsGrid.querySelector(`[data-supabase-id="${CSS.escape(sid)}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("highlighted");
+          el.addEventListener("animationend", () => el.classList.remove("highlighted"), { once: true });
+          return true;
+        }
+        return false;
+      };
+      if (tryScroll()) return;
+      // 현재 페이지에 없으면 전체 filterData에서 페이지 찾기
+      const idx = filterData.findIndex(p => p.supabase_id === sid);
+      if (idx < 0) return;
+      currentPage = Math.floor(idx / PAGESIZE) + 1;
+      renderCards();
+      setTimeout(tryScroll, 100);
     }
 
     function renderPagination() {
@@ -1490,6 +1658,13 @@
       saveBookmarks();
     }
 
+    // 슬랙 포맷 1명 생성 헬퍼
+    function formatOneForSlack(p) {
+      const parts = [p.name, `${p.company}${p.role ? " · " + p.role : ""}`, p.total_career ? "경력 " + p.total_career : ""].filter(Boolean);
+      const links = [p.remember ? `<${p.remember}|R>` : "", p.linkedin ? `<${p.linkedin}|in>` : ""].filter(Boolean);
+      return `• ${parts.join(" | ")}${links.length ? "  " + links.join(" ") : ""}`;
+    }
+
     function renderBookmarkDrawer() {
       if (!bookmarks.length) {
         bookmarkListEl.innerHTML = `
@@ -1503,39 +1678,125 @@
       const map = {};
       RAWDATA.forEach((p) => { map[p.id] = p; });
 
+      // 드로어 닫혔다가 다시 열릴 때 사라진 북마크 체크 정리
+      checkedBookmarks.forEach(id => { if (!bookmarks.includes(id)) checkedBookmarks.delete(id); });
+
       bookmarkListEl.innerHTML = "";
+      const frag = document.createDocumentFragment(); // 성능: 한 번에 DOM 삽입
+
       bookmarks.forEach((id) => {
         const p = map[id];
         if (!p) return;
+        const checked = checkedBookmarks.has(id);
         const item = document.createElement("div");
-        item.className = "bookmark-item";
+        item.className = "bookmark-item" + (checked ? " checked" : "");
+        item.dataset.id = id;
+        const tenureStart = p.tenure_start
+          ? p.tenure_start + "~"
+          : (p.tenure ? p.tenure.split("~")[0].trim() + "~" : "");
+        const regionVal = (p.region && p.region.toUpperCase() !== "NA") ? p.region : "";
+        const metaParts = [
+          p.job        || "",
+          p.total_career || "",
+          tenureStart   || "",
+          regionVal     || ""
+        ].filter(Boolean);
         item.innerHTML = `
-          <div class="bk-avatar">${esc((p.name || "?").charAt(0))}</div>
+          <input type="checkbox" class="bk-checkbox" data-id="${esc(id)}" ${checked ? "checked" : ""} />
           <div class="bk-info">
             <div class="bk-name">${esc(p.name)}</div>
-            <div class="bk-sub">${esc(p.company)} · ${esc(p.role || p.job)}</div>
+            <div class="bk-sub">${esc(p.company)}${p.role ? "  ·  " + esc(p.role) : ""}</div>
+            ${metaParts.length ? `<div class="bk-meta">${metaParts.map(v => `<span>${esc(v)}</span>`).join('<span style="color:var(--border)">·</span>')}</div>` : ""}
           </div>
-          <button class="bk-remove" data-id="${esc(id)}" title="삭제">×</button>
+          <div class="bk-actions">
+            <a class="bk-link-btn ${p.remember ? "" : "disabled"}" href="${esc(p.remember || "#")}" target="_blank" rel="noopener" title="리멤버">R</a>
+            <a class="bk-link-btn ${p.linkedin ? "" : "disabled"}" href="${esc(p.linkedin || "#")}" target="_blank" rel="noopener" title="링크드인">in</a>
+            <button class="bk-copy-single" data-id="${esc(id)}" title="이 인재만 복사">📋</button>
+            <button class="bk-remove" data-id="${esc(id)}" title="삭제">×</button>
+          </div>
         `;
-        bookmarkListEl.appendChild(item);
+        frag.appendChild(item);
       });
+      bookmarkListEl.appendChild(frag);
+      bookmarkListEl.addEventListener("click", _bkListClickHandler);
+    }
 
-      bookmarkListEl.querySelectorAll(".bk-remove").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const idx = bookmarks.indexOf(btn.dataset.id);
-          if (idx >= 0) { bookmarks.splice(idx, 1); saveBookmarks(); }
-        });
-      });
+    // 위임 핸들러 (중복 등록 방지용 named function)
+    function _bkListClickHandler(e) {
+      // 체크박스
+      const cb = e.target.closest(".bk-checkbox");
+      if (cb) {
+        const id = cb.dataset.id;
+        const item = cb.closest(".bookmark-item");
+        if (cb.checked) { checkedBookmarks.add(id); item.classList.add("checked"); }
+        else            { checkedBookmarks.delete(id); item.classList.remove("checked"); }
+        _updateSelectAllBtn();
+        return;
+      }
+      // 개별 복사
+      const copySingle = e.target.closest(".bk-copy-single");
+      if (copySingle) {
+        const map = {};
+        RAWDATA.forEach(p => { map[p.id] = p; });
+        const p = map[copySingle.dataset.id];
+        if (p) navigator.clipboard.writeText(formatOneForSlack(p));
+        copySingle.textContent = "✅";
+        setTimeout(() => { copySingle.textContent = "📋"; }, 1500);
+        return;
+      }
+      // 삭제
+      const removeBtn = e.target.closest(".bk-remove");
+      if (removeBtn) {
+        const id = removeBtn.dataset.id;
+        const idx = bookmarks.indexOf(id);
+        if (idx >= 0) {
+          bookmarks.splice(idx, 1);
+          checkedBookmarks.delete(id);
+          saveBookmarks();
+        }
+      }
+    }
+
+    function _updateSelectAllBtn() {
+      const btn = document.getElementById("bkSelectAllBtn");
+      if (!btn) return;
+      const allChecked = bookmarks.length > 0 && bookmarks.every(id => checkedBookmarks.has(id));
+      btn.textContent = allChecked ? "전체 해제" : "전체 선택";
     }
 
     function openBookmarkDrawer() {
+      // 위임 핸들러 중복 등록 방지
+      bookmarkListEl.removeEventListener("click", _bkListClickHandler);
       bookmarkDrawer.classList.add("open");
       bookmarkOverlay.classList.add("open");
       renderBookmarkDrawer();
+      _updateSelectAllBtn();
     }
     function closeBookmarkDrawer() {
       bookmarkDrawer.classList.remove("open");
       bookmarkOverlay.classList.remove("open");
+    }
+
+    function copyBookmarksForSlack() {
+      const targets = checkedBookmarks.size > 0
+        ? [...checkedBookmarks]
+        : bookmarks; // 체크 없으면 전체
+
+      if (!targets.length) return;
+      const map = {};
+      RAWDATA.forEach((p) => { map[p.id] = p; });
+
+      const lines = targets.map(id => map[id]).filter(Boolean).map(formatOneForSlack);
+      const text = `*[인재풀 공유]*\n` + lines.join("\n");
+
+      navigator.clipboard.writeText(text).then(() => {
+        bookmarkCopyBtn.textContent = "✅ 복사됨!";
+        bookmarkCopyBtn.classList.add("copied");
+        setTimeout(() => {
+          bookmarkCopyBtn.textContent = "📋 링크 복사";
+          bookmarkCopyBtn.classList.remove("copied");
+        }, 2000);
+      });
     }
 
     function update() {
@@ -1557,6 +1818,7 @@
 
         RAWDATA = (json || []).map((row, idx) => ({
           id: `${row.source_sheet || ""}_${(row.name || "").replace(/\n.*/,"").trim()}_${idx}`,
+          supabase_id:     row.id              || "",
           source_sheet:    row.source_sheet    || "",
           company:         row.company         || "",
           name:            row.name            || "",
@@ -1578,18 +1840,17 @@
 
         const companyOptions = [...new Set(RAWDATA.map(p => p.company).filter(Boolean))].sort();
         const jobOptions     = [...new Set(RAWDATA.map(p => p.job).filter(Boolean))].sort();
-        const teamOptions    = [...new Set(RAWDATA.map(p => p.team).filter(Boolean))].sort();
-        const roleOptions    = [...new Set(RAWDATA.map(p => p.role).filter(Boolean))].sort();
-        // [FIX] Region도 searchable-select로
-        const regionOptions  = [...new Set(RAWDATA.map(p => p.region).filter(Boolean))].sort();
+        const regionOptions  = [...new Set(RAWDATA.flatMap(p => (p.region || "").split("|").filter(Boolean)))].sort();
 
         setupSearchableSelect(companySelect, () => companyOptions, (v) => { selectedCompany = v; }, () => companyBadgeContainer, () => selectedCompany);
         setupSearchableSelect(jobSelect,     () => jobOptions,     (v) => { selectedJob = v; },     () => jobBadgeContainer,     () => selectedJob);
-        setupSearchableSelect(teamSelect,    () => teamOptions,    (v) => { selectedTeam = v; },    () => teamBadgeContainer,    () => selectedTeam);
-        setupSearchableSelect(roleSelect,    () => roleOptions,    (v) => { selectedRole = v; },    () => roleBadgeContainer,    () => selectedRole);
         setupSearchableSelect(regionSelect,  () => regionOptions,  (v) => { selectedRegion = v; },  () => regionBadgeContainer,  () => selectedRegion);
 
         update();
+
+        // URL ?person= 파라미터 처리 (로그인 후에도 유지됨)
+        const personId = new URLSearchParams(location.search).get("person");
+        if (personId) setTimeout(() => scrollToPersonCard(personId), 200);
       } catch (e) {
         console.error("Supabase fetch error", e);
         cardsGrid.innerHTML = `
@@ -1601,31 +1862,28 @@
         `;
       }
 
-      // [FIX] debounce 적용 (300ms)
+      // 입력 중 실시간 필터 (입력 중인 텍스트도 임시 키워드로 반영)
       searchInput.addEventListener("input", debounce(() => { currentPage = 1; update(); }, 300));
       nameInput.addEventListener("input", debounce(() => { currentPage = 1; update(); }, 300));
 
       resetBtn.addEventListener("click", () => {
         searchInput.value = "";
+        searchKeywords = [];
+        renderSearchTags();
         nameInput.value = "";
         selectedCompanyTab = "ALL";
         selectedCompany = null;
         selectedJob = null;
-        selectedTeam = null;
-        selectedRole = null;
         selectedRegion = null;
         setExcludeIntern(false);
         document.querySelectorAll(".company-tab").forEach((b) => b.classList.remove("active"));
         const first = document.querySelector('.company-tab[data-company="ALL"]');
         if (first) first.classList.add("active");
-        // ss-input 값 초기화
-        [companySelect, jobSelect, teamSelect, roleSelect, regionSelect].forEach(sel => {
+        [companySelect, jobSelect, regionSelect].forEach(sel => {
           sel.querySelector(".ss-input").value = "";
         });
         companyBadgeContainer.innerHTML = "";
         jobBadgeContainer.innerHTML = "";
-        teamBadgeContainer.innerHTML = "";
-        roleBadgeContainer.innerHTML = "";
         regionBadgeContainer.innerHTML = "";
         currentPage = 1;
         update();
@@ -1641,13 +1899,7 @@
         });
       });
 
-      // [FIX] 인턴 제외 토글 — 단일 상태(excludeIntern) 공유
       internToggleEl.addEventListener("click", () => {
-        setExcludeIntern(!excludeIntern);
-        currentPage = 1;
-        update();
-      });
-      internSidebarToggleEl.addEventListener("click", () => {
         setExcludeIntern(!excludeIntern);
         currentPage = 1;
         update();
@@ -1656,6 +1908,24 @@
       headerBookmarkBtn.addEventListener("click", openBookmarkDrawer);
       bookmarkCloseBtn.addEventListener("click", closeBookmarkDrawer);
       bookmarkOverlay.addEventListener("click", closeBookmarkDrawer);
+      bookmarkCopyBtn.addEventListener("click", copyBookmarksForSlack);
+
+      document.getElementById("bkSelectAllBtn").addEventListener("click", () => {
+        const allChecked = bookmarks.every(id => checkedBookmarks.has(id));
+        if (allChecked) {
+          checkedBookmarks.clear();
+        } else {
+          bookmarks.forEach(id => checkedBookmarks.add(id));
+        }
+        // 체크박스 DOM 상태 동기화 (재렌더 없이)
+        bookmarkListEl.querySelectorAll(".bk-checkbox").forEach(cb => {
+          const checked = checkedBookmarks.has(cb.dataset.id);
+          cb.checked = checked;
+          cb.closest(".bookmark-item").classList.toggle("checked", checked);
+        });
+        _updateSelectAllBtn();
+      });
+
       bookmarkClearBtn.addEventListener("click", () => {
         if (!bookmarks.length) return;
         if (!confirm("모든 북마크를 삭제할까요?")) return;
@@ -1665,10 +1935,13 @@
     }
 
     document.addEventListener("DOMContentLoaded", async () => {
-      // 기존 세션 확인 후 데이터 로드
       const { data: { session } } = await sb.auth.getSession();
-      if (session) { hideLogin(); await init(); }
-      else { showLogin(); }
+      if (session) {
+        hideLogin();
+        await init();
+      } else {
+        showLogin();
+      }
     });
   </script>
 </body>
