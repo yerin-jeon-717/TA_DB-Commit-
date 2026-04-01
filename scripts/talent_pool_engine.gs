@@ -1,5 +1,5 @@
 /**
- * [v23.0] 인재풀 엔진
+ * [v23.1] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -12,6 +12,7 @@
  * 10. [PATCH] Supabase 동기화 함수 복구 + 메뉴 추가
  * 11. [Update] runRegionMapping 권역 확장 (동남아/중동/남미/CIS/호주/유럽/중국), 해외 키워드 추가
  * 12. [v23.0] 중복대조/병합 함수 ScriptProperties 의존 제거 → 실행 시마다 시트 직접 선택
+ * 13. [v23.1] buildCategoryMappingReport/applyCategoryMapping 행 번호 대신 LinkedIn URL 키 매칭
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -26,7 +27,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.0')
+  ui.createMenu('🚀 인재풀 엔진 v23.1')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -166,7 +167,7 @@ function buildCategoryMappingReport() {
     const li  = String(data[i][tMap["링크드인 페이지"]] || "").trim();
     if ((rem === "" || rem === "-") && li !== "") {
       liList.push({
-        row: i + 1,
+        liUrl: _extractRichUrl(rts[i][tMap["링크드인 페이지"]]),
         name: data[i][tMap["이름"]],
         liRt:  rts[i][tMap["링크드인 페이지"]],
         remRt: rts[i][tMap["리멤버 페이지"]],
@@ -183,10 +184,10 @@ function buildCategoryMappingReport() {
 
   let rep = ss.getSheetByName(SHEET_CATEGORY_MAP) || ss.insertSheet(SHEET_CATEGORY_MAP);
   rep.clear();
-  rep.appendRow(["행번호","이름","링크드인","리멤버","LinkedIn 직책(원본/수정가능)","→ 팀 (표준 선택)","→ 직책 (표준 선택)"]);
+  rep.appendRow(["링크드인URL","이름","링크드인","리멤버","LinkedIn 직책(원본/수정가능)","→ 팀 (표준 선택)","→ 직책 (표준 선택)"]);
   rep.getRange(1, 1, 1, 7).setBackground("#45818e").setFontColor("white").setFontWeight("bold").setHorizontalAlignment("center");
 
-  const reportRows = liList.map(item => [item.row, item.name, "", "", item.role, "", ""]);
+  const reportRows = liList.map(item => [item.liUrl, item.name, "", "", item.role, "", ""]);
   rep.getRange(2, 1, reportRows.length, 7).setValues(reportRows);
 
   const teamArr = [...refTeams].sort(), roleArr = [...refRoles].sort();
@@ -216,15 +217,29 @@ function applyCategoryMapping() {
   const main = sourceName ? ss.getSheetByName(sourceName) : null;
   if (!main) return ui.alert("원본 시트를 찾을 수 없습니다.\n매핑 리포트를 다시 생성해주세요.");
 
-  const data = rep.getDataRange().getValues(), tMap = getColMap(main);
-  let count = 0;
+  const tMap = getColMap(main);
+  const mainRts = main.getDataRange().getRichTextValues();
+
+  // Build LinkedIn URL → actual row number (1-based) lookup from current sheet state
+  const urlToRow = {};
+  for (let i = 1; i < mainRts.length; i++) {
+    const url = _extractRichUrl(mainRts[i][tMap["링크드인 페이지"]]);
+    if (url) urlToRow[url] = i + 1;
+  }
+
+  const data = rep.getDataRange().getValues();
+  let count = 0, skipped = 0;
 
   for (let i = 1; i < data.length; i++) {
-    const rowIdx     = data[i][0];
+    const liUrl      = String(data[i][0] || "").trim();
     const editedRole = String(data[i][4] || "").trim();
     const selTeam    = String(data[i][5] || "").trim();
     const selRole    = String(data[i][6] || "").trim();
-    const roleCell   = main.getRange(rowIdx, tMap["직책"] + 1);
+
+    const rowIdx = urlToRow[liUrl];
+    if (!rowIdx) { skipped++; continue; }
+
+    const roleCell = main.getRange(rowIdx, tMap["직책"] + 1);
 
     if (selTeam) main.getRange(rowIdx, tMap["팀"] + 1).setValue(selTeam);
 
@@ -241,8 +256,10 @@ function applyCategoryMapping() {
     count++;
   }
 
+  const skipMsg = skipped > 0 ? `\n(LinkedIn URL 미매칭 ${skipped}건 건너뜀)` : "";
+
   rep.clear();
-  ui.alert(`✅ 총 ${count}명 반영 완료!`);
+  ui.alert(`✅ 총 ${count}명 반영 완료!${skipMsg}`);
 }
 
 // ── [⚙️ 설정] ─────────────────────────────────
