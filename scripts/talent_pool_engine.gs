@@ -1,5 +1,5 @@
 /**
- * [v23.1] 인재풀 엔진
+ * [v23.2] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -13,6 +13,7 @@
  * 11. [Update] runRegionMapping 권역 확장 (동남아/중동/남미/CIS/호주/유럽/중국), 해외 키워드 추가
  * 12. [v23.0] 중복대조/병합 함수 ScriptProperties 의존 제거 → 실행 시마다 시트 직접 선택
  * 13. [v23.1] buildCategoryMappingReport/applyCategoryMapping 행 번호 대신 LinkedIn URL 키 매칭
+ * 14. [v23.2] applyCategoryMapping URL 추출: col 0 텍스트 대신 col 3 LinkedIn RichText 우선 사용
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -27,7 +28,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.1')
+  ui.createMenu('🚀 인재풀 엔진 v23.2')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -227,11 +228,13 @@ function applyCategoryMapping() {
     if (url) urlToRow[url] = i + 1;
   }
 
-  const data = rep.getDataRange().getValues();
+  const data    = rep.getDataRange().getValues();
+  const repRts  = rep.getDataRange().getRichTextValues();
   let count = 0, skipped = 0;
 
   for (let i = 1; i < data.length; i++) {
-    const liUrl      = String(data[i][0] || "").trim();
+    // col 3 (index 2) = 링크드인 RichText (소스 시트에서 직접 복사) → col 0 텍스트 fallback
+    const liUrl      = _extractRichUrl(repRts[i][2]) || String(data[i][0] || "").trim();
     const editedRole = String(data[i][4] || "").trim();
     const selTeam    = String(data[i][5] || "").trim();
     const selRole    = String(data[i][6] || "").trim();
