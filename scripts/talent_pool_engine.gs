@@ -1,5 +1,5 @@
 /**
- * [v23.2] 인재풀 엔진
+ * [v23.3] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -14,6 +14,7 @@
  * 12. [v23.0] 중복대조/병합 함수 ScriptProperties 의존 제거 → 실행 시마다 시트 직접 선택
  * 13. [v23.1] buildCategoryMappingReport/applyCategoryMapping 행 번호 대신 LinkedIn URL 키 매칭
  * 14. [v23.2] applyCategoryMapping URL 추출: col 0 텍스트 대신 col 3 LinkedIn RichText 우선 사용
+ * 15. [v23.3] person_id (M열) 일괄 생성 + Supabase UPSERT on person_id
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -28,7 +29,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.2')
+  ui.createMenu('🚀 인재풀 엔진 v23.3')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -53,6 +54,8 @@ function onOpen() {
     .addItem('⚙️ 엔진 설정 시트 초기화/생성', 'setupSettingSheet')
     .addSeparator()
     .addSubMenu(ui.createMenu('☁️ 4. Supabase 동기화')
+      .addItem('🆔 person_id 일괄 생성 (M열)', 'generatePersonIds')
+      .addSeparator()
       .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
       .addItem('📤 모든 통합_ 시트 일괄 업로드', 'syncAllSheetsToSupabase'))
     .addToUi();
@@ -732,6 +735,82 @@ function clearAllColors() {
   [SHEET_DUP_REPORT, SHEET_CATEGORY_MAP].forEach(n => { const s = ss.getSheetByName(n); if (s) s.clear(); });
 }
 
+// ── [🆔 person_id 관리] ───────────────────────
+
+/**
+ * 모든 통합_ 시트의 M열에 person_id(UUID)를 일괄 생성.
+ * - 이미 값이 있으면 보존 (불변)
+ * - LinkedIn URL / Remember URL이 다른 시트에서 이미 사용된 ID면 동일 ID 사용 (cross-sheet 동일인)
+ * - M1 헤더 "person_id" 없으면 자동 생성
+ */
+function generatePersonIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
+  if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
+
+  const PERSON_ID_COL = 13;  // M열 (1-based)
+  const urlMap = {};          // {url: person_id} — cross-sheet dedup용
+
+  // 1단계: 기존 ID 수집 (보존)
+  for (const sheet of targets) {
+    const tMap = getColMap(sheet);
+    if (!("person_id" in tMap)) continue;
+    const data = sheet.getDataRange().getValues();
+    const rts  = sheet.getDataRange().getRichTextValues();
+    for (let i = 1; i < data.length; i++) {
+      const pid = String(data[i][tMap["person_id"]] || "").trim();
+      if (!pid) continue;
+      const liUrl  = _extractRichUrl(rts[i][tMap["링크드인 페이지"]]);
+      const remUrl = _extractRichUrl(rts[i][tMap["리멤버 페이지"]]);
+      if (liUrl)  urlMap[liUrl]  = pid;
+      if (remUrl) urlMap[remUrl] = pid;
+    }
+  }
+
+  // 2단계: 미생성 ID 채우기
+  let created = 0, skipped = 0;
+  for (const sheet of targets) {
+    const tMap = getColMap(sheet);
+    const data = sheet.getDataRange().getValues();
+    const rts  = sheet.getDataRange().getRichTextValues();
+
+    // M1 헤더 없으면 추가
+    if (!("person_id" in tMap)) {
+      sheet.getRange(1, PERSON_ID_COL)
+        .setValue("person_id")
+        .setBackground("#efefef")
+        .setFontWeight("bold");
+      tMap["person_id"] = PERSON_ID_COL - 1;  // 0-based
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      const name = String(data[i][tMap["이름"]] || "").trim();
+      if (!name) continue;
+
+      const existing = String(data[i][tMap["person_id"]] || "").trim();
+      if (existing) { skipped++; continue; }
+
+      const liUrl  = _extractRichUrl(rts[i][tMap["링크드인 페이지"]]);
+      const remUrl = _extractRichUrl(rts[i][tMap["리멤버 페이지"]]);
+
+      // cross-sheet 동일인 확인
+      let pid = (liUrl && urlMap[liUrl]) || (remUrl && urlMap[remUrl]) || "";
+      if (!pid) {
+        pid = Utilities.getUuid();
+        if (liUrl)  urlMap[liUrl]  = pid;
+        if (remUrl) urlMap[remUrl] = pid;
+      }
+
+      sheet.getRange(i + 1, PERSON_ID_COL).setValue(pid);
+      created++;
+    }
+    SpreadsheetApp.flush();
+  }
+
+  ui.alert(`✅ person_id 생성 완료\n신규: ${created}건 / 기존 유지: ${skipped}건\n\n* M열에 person_id가 채워졌습니다.\n* 이제 Supabase 업로드를 실행하세요.`);
+}
+
 // ── [☁️ Supabase 동기화] ──────────────────────
 
 function syncCurrentSheetToSupabase() {
@@ -750,28 +829,31 @@ function syncCurrentSheetToSupabase() {
     return;
   }
 
-  const headers = {
-    'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey,
-    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-  };
-
-  const deleteRes = UrlFetchApp.fetch(
-    SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
-    { method: 'delete', headers: headers, muteHttpExceptions: true }
-  );
-  if (deleteRes.getResponseCode() >= 300) { ui.alert('❌ 삭제 오류:\n' + deleteRes.getContentText()); return; }
-
   const rows = _extractSheetForSupabase(sheet, sheetName);
   if (rows.length === 0) { ui.alert('동기화할 데이터가 없습니다.'); return; }
 
+  const hasPid = rows.every(r => r.person_id);
+  if (!hasPid) {
+    ui.alert('⚠️ person_id가 없는 행이 있습니다.\n먼저 [🆔 person_id 일괄 생성]을 실행하세요.');
+    return;
+  }
+
+  // person_id 기준 UPSERT (있으면 업데이트, 없으면 삽입)
+  const headers = {
+    'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=minimal'
+  };
+  const url = SUPABASE_URL + '/rest/v1/talent_profiles?on_conflict=person_id';
+
   const BATCH_SIZE = 500;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const res = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/talent_profiles', {
+    const res = UrlFetchApp.fetch(url, {
       method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + BATCH_SIZE)), muteHttpExceptions: true
     });
-    if (res.getResponseCode() >= 300) { ui.alert('❌ 삽입 오류:\n' + res.getContentText()); return; }
+    if (res.getResponseCode() >= 300) { ui.alert('❌ 업로드 오류:\n' + res.getContentText()); return; }
   }
-  ui.alert('✅ Supabase 동기화 완료\n시트: ' + sheetName + '\n총 ' + rows.length + '건');
+  ui.alert('✅ Supabase 동기화 완료\n시트: ' + sheetName + '\n총 ' + rows.length + '건 (upsert)');
 }
 
 function syncAllSheetsToSupabase() {
@@ -780,34 +862,36 @@ function syncAllSheetsToSupabase() {
   if (!serviceKey) { ui.alert("⚠️ SUPABASE_SERVICE_KEY가 설정되지 않았습니다."); return; }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_"));
+  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
   if (targets.length === 0) { ui.alert("통합_ 시트가 없습니다."); return; }
 
   const headers = {
     'apikey': serviceKey, 'Authorization': 'Bearer ' + serviceKey,
-    'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=minimal'
   };
+  const upsertUrl = SUPABASE_URL + '/rest/v1/talent_profiles?on_conflict=person_id';
   const results = [];
 
   for (const sheet of targets) {
     const sheetName = sheet.getName();
-    const delRes = UrlFetchApp.fetch(
-      SUPABASE_URL + '/rest/v1/talent_profiles?source_sheet=eq.' + encodeURIComponent(sheetName),
-      { method: 'delete', headers: headers, muteHttpExceptions: true }
-    );
-    if (delRes.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 삭제 오류'); continue; }
-
     const rows = _extractSheetForSupabase(sheet, sheetName);
     if (rows.length === 0) { results.push('⚠️ ' + sheetName + ': 데이터 없음'); continue; }
 
+    const missingPid = rows.filter(r => !r.person_id).length;
+    if (missingPid > 0) {
+      results.push('⚠️ ' + sheetName + ': person_id 미생성 ' + missingPid + '건 — 건너뜀');
+      continue;
+    }
+
     let failed = false;
     for (let i = 0; i < rows.length; i += 500) {
-      const res = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/talent_profiles', {
+      const res = UrlFetchApp.fetch(upsertUrl, {
         method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + 500)), muteHttpExceptions: true
       });
-      if (res.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 삽입 오류'); failed = true; break; }
+      if (res.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 업로드 오류'); failed = true; break; }
     }
-    if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건');
+    if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건 (upsert)');
   }
 
   ui.alert('☁️ Supabase 일괄 동기화 완료\n\n' + results.join('\n'));
@@ -827,6 +911,7 @@ function _extractSheetForSupabase(sheet, sheetName) {
     const tenureStr = (r[tMap["재직 기간"]] || "").toString().trim();
     const tsM = tenureStr.match(/(\d{4}\.\d{2})/);
     rows.push({
+      person_id:    tMap["person_id"] !== undefined ? (r[tMap["person_id"]] || "").toString().trim() : "",
       source_sheet: sheetName,
       company:      (r[tMap["회사명"]]       || "").toString().trim(),
       name:         name,
