@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS talent_profiles (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- 인물 식별자 (GAS M열에서 생성, 이직 추적 키)
-  person_id     TEXT UNIQUE,            -- M열 UUID (generatePersonIds로 생성)
+  person_id     TEXT UNIQUE,            -- N열 UUID (generatePersonIds로 생성)
 
   -- 출처
   source_sheet  TEXT NOT NULL,          -- 통합_ 시트명 (예: 통합_APR)
