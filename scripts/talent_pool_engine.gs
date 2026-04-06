@@ -889,10 +889,17 @@ function syncAllSheetsToSupabase() {
       continue;
     }
 
+    // 같은 시트 내 중복 person_id 제거 (마지막 행 우선) — 배치 내 중복으로 인한 21000 오류 방지
+    const pidMap = new Map();
+    rows.forEach(r => pidMap.set(r.person_id, r));
+    const dedupedRows = [...pidMap.values()];
+    const dupCount = rows.length - dedupedRows.length;
+    if (dupCount > 0) results.push(`⚠️ ${sheetName}: 중복 person_id ${dupCount}건 제거 후 업로드`);
+
     let failed = false;
-    for (let i = 0; i < rows.length; i += 500) {
+    for (let i = 0; i < dedupedRows.length; i += 500) {
       const res = UrlFetchApp.fetch(upsertUrl, {
-        method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + 500)), muteHttpExceptions: true
+        method: 'post', headers: headers, payload: JSON.stringify(dedupedRows.slice(i, i + 500)), muteHttpExceptions: true
       });
       if (res.getResponseCode() >= 300) {
         const errText = res.getContentText().slice(0, 200);
@@ -900,7 +907,7 @@ function syncAllSheetsToSupabase() {
         failed = true; break;
       }
     }
-    if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건 (upsert)');
+    if (!failed) results.push('✅ ' + sheetName + ' — ' + dedupedRows.length + '건 (upsert)');
   }
 
   ui.alert('☁️ Supabase 일괄 동기화 완료\n\n' + results.join('\n'));
