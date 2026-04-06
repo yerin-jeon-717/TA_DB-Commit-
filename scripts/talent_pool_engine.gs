@@ -1,5 +1,5 @@
 /**
- * [v23.5] 인재풀 엔진
+ * [v23.6] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -17,6 +17,7 @@
  * 15. [v23.3] person_id 일괄 생성 + Supabase UPSERT on person_id
  * 16. [v23.4] person_id 열 M→N (M열 Region 기존 사용), CLAUDE.md 스키마 A~N 업데이트
  * 17. [v23.5] runRegionMapping Region 열 고정(M=13) — getLastColumn() 동적 계산 제거
+ * 18. [v23.6] mergeLinkedinIntoRemember 복사 열 A~L(12) 고정 — 잉여 컬럼 유입 차단
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -31,7 +32,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.5')
+  ui.createMenu('🚀 인재풀 엔진 v23.6')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -602,7 +603,8 @@ function mergeLinkedinIntoRemember() {
   const liS = _pickSheet('📋 링크드인 시트 선택 (병합 후 숨김)', s => s.getName().startsWith('linkedin_'));
   if (!liS) return;
 
-  const liData = liS.getDataRange().getValues().slice(1);
+  const liData = liS.getDataRange().getValues().slice(1)
+    .map(r => r.slice(0, 12));  // A~L(12열) 고정 — 헤더 없는 잉여 컬럼 유입 방지
   if (liData.length === 0) return ui.alert('링크드인 시트에 남은 데이터가 없습니다.');
 
   const t2 = getColMap(liS);
@@ -610,7 +612,7 @@ function mergeLinkedinIntoRemember() {
   const rtD = liS.getRange(2, t2["링크드인 페이지"] + 1, liData.length, 1).getRichTextValues();
 
   const startRow = remS.getLastRow() + 1;
-  remS.getRange(startRow, 1, liData.length, liData[0].length).setValues(liData);
+  remS.getRange(startRow, 1, liData.length, 12).setValues(liData);
   const t1 = getColMap(remS);
   remS.getRange(startRow, t1["리멤버 페이지"]  + 1, liData.length, 1).setRichTextValues(rtC);
   remS.getRange(startRow, t1["링크드인 페이지"] + 1, liData.length, 1).setRichTextValues(rtD);
