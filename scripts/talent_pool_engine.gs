@@ -1,5 +1,5 @@
 /**
- * [v23.6] 인재풀 엔진
+ * [v23.7] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -18,6 +18,7 @@
  * 16. [v23.4] person_id 열 M→N (M열 Region 기존 사용), CLAUDE.md 스키마 A~N 업데이트
  * 17. [v23.5] runRegionMapping Region 열 고정(M=13) — getLastColumn() 동적 계산 제거
  * 18. [v23.6] mergeLinkedinIntoRemember 복사 열 A~L(12) 고정 — 잉여 컬럼 유입 차단
+ * 19. [v23.7] 월별 아카이빙 함수 추가 (runMonthlyArchive) + 메뉴 4번 섹션
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -32,7 +33,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.6')
+  ui.createMenu('🚀 인재풀 엔진 v23.7')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -56,7 +57,10 @@ function onOpen() {
     .addSeparator()
     .addItem('⚙️ 엔진 설정 시트 초기화/생성', 'setupSettingSheet')
     .addSeparator()
-    .addSubMenu(ui.createMenu('☁️ 4. Supabase 동기화')
+    .addSubMenu(ui.createMenu('📦 4. 월별 아카이빙')
+      .addItem('📦 현재 통합_ 시트 월별 아카이브', 'runMonthlyArchive'))
+    .addSeparator()
+    .addSubMenu(ui.createMenu('☁️ 5. Supabase 동기화')
       .addItem('🆔 person_id 일괄 생성 (M열)', 'generatePersonIds')
       .addSeparator()
       .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
@@ -738,6 +742,39 @@ function runRegionMapping() {
 function clearAllColors() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   [SHEET_DUP_REPORT, SHEET_CATEGORY_MAP].forEach(n => { const s = ss.getSheetByName(n); if (s) s.clear(); });
+}
+
+// ── [📦 월별 아카이빙] ────────────────────────
+
+/**
+ * 모든 통합_ 시트를 현재 연월 태그로 복사해 아카이브.
+ * 실행 시점의 연월(예: 2026.04)을 기준으로 시트명 생성.
+ * 같은 달에 이미 아카이브가 존재하면 건너뜀.
+ * 아카이브 시트는 숨김 처리.
+ *
+ * 권장 순서: 아카이빙 → 새 데이터 import → GAS 파이프라인 → person_id 생성 → Supabase sync
+ */
+function runMonthlyArchive() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
+  if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
+
+  const dateTag = Utilities.formatDate(new Date(), "GMT+9", "yyyy.MM");
+  const results = [];
+
+  for (const sheet of targets) {
+    const archiveName = `📦 ${sheet.getName()}_${dateTag}`;
+    if (ss.getSheetByName(archiveName)) {
+      results.push(`⚠️ ${archiveName}: 이미 존재 — 건너뜀`);
+      continue;
+    }
+    const copy = sheet.copyTo(ss);
+    copy.setName(archiveName);
+    copy.hideSheet();
+    results.push(`✅ ${archiveName}`);
+  }
+
+  ui.alert(`📦 아카이빙 완료 (${dateTag})\n\n${results.join('\n')}\n\n아카이브 시트는 숨김 처리되었습니다.\n시트 탭 우클릭 → 숨겨진 시트 보기로 확인 가능합니다.`);
 }
 
 // ── [🆔 person_id 관리] ───────────────────────
