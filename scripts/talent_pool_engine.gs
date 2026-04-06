@@ -894,7 +894,11 @@ function syncAllSheetsToSupabase() {
       const res = UrlFetchApp.fetch(upsertUrl, {
         method: 'post', headers: headers, payload: JSON.stringify(rows.slice(i, i + 500)), muteHttpExceptions: true
       });
-      if (res.getResponseCode() >= 300) { results.push('❌ ' + sheetName + ': 업로드 오류'); failed = true; break; }
+      if (res.getResponseCode() >= 300) {
+        const errText = res.getContentText().slice(0, 200);
+        results.push('❌ ' + sheetName + ' [' + res.getResponseCode() + '] ' + errText);
+        failed = true; break;
+      }
     }
     if (!failed) results.push('✅ ' + sheetName + ' — ' + rows.length + '건 (upsert)');
   }
