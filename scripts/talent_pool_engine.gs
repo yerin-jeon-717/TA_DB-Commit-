@@ -1,5 +1,5 @@
 /**
- * [v23.4] 인재풀 엔진
+ * [v23.5] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -16,6 +16,7 @@
  * 14. [v23.2] applyCategoryMapping URL 추출: col 0 텍스트 대신 col 3 LinkedIn RichText 우선 사용
  * 15. [v23.3] person_id 일괄 생성 + Supabase UPSERT on person_id
  * 16. [v23.4] person_id 열 M→N (M열 Region 기존 사용), CLAUDE.md 스키마 A~N 업데이트
+ * 17. [v23.5] runRegionMapping Region 열 고정(M=13) — getLastColumn() 동적 계산 제거
  */
 
 // ── 전역 상수 ──────────────────────────────────
@@ -30,7 +31,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.4')
+  ui.createMenu('🚀 인재풀 엔진 v23.5')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -726,7 +727,8 @@ function runRegionMapping() {
     ].forEach(rule => { if (rule.k.some(kw => c.includes(kw))) m.push(rule.r); });
     return [m.length > 0 ? [...new Set(m.filter(x => x !== "글로벌"))].join("|") || "글로벌" : "NA"];
   });
-  const col = t["Region"] !== undefined ? t["Region"] + 1 : s.getLastColumn() + 1;
+  const REGION_COL = 13;  // M열 고정 (getLastColumn() 동적 계산 금지 — 시트별 컬럼 수 차이로 위치 오염 발생)
+  const col = t["Region"] !== undefined ? t["Region"] + 1 : REGION_COL;
   if (t["Region"] === undefined) s.getRange(1, col).setValue("Region");
   s.getRange(2, col, res.length, 1).setValues(res);
 }
