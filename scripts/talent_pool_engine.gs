@@ -749,7 +749,7 @@ function generatePersonIds() {
   const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
   if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
 
-  const PERSON_ID_COL = 13;  // M열 (1-based)
+  const PERSON_ID_COL = 14;  // N열 (1-based)
   const urlMap = {};          // {url: person_id} — cross-sheet dedup용
 
   // 1단계: 기존 ID 수집 (보존)
