@@ -759,11 +759,15 @@ function runMonthlyArchive() {
   const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
   if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
 
-  const dateTag = Utilities.formatDate(new Date(), "GMT+9", "yyyy.MM");
+  const now = new Date();
+  const yy = Utilities.formatDate(now, "GMT+9", "yy");
+  const m  = String(now.getMonth() + 1);  // 앞자리 0 없음 (4월 → "4")
+  const dateTag = `${yy}.${m}월`;          // 예: "26.4월"
   const results = [];
 
   for (const sheet of targets) {
-    const archiveName = `📦 ${sheet.getName()}_${dateTag}`;
+    const companyName = sheet.getName().replace(/^통합_/, "");  // "통합_APR" → "APR"
+    const archiveName = `${companyName} ${dateTag} 아카이빙 시트`;
     if (ss.getSheetByName(archiveName)) {
       results.push(`⚠️ ${archiveName}: 이미 존재 — 건너뜀`);
       continue;
@@ -774,7 +778,7 @@ function runMonthlyArchive() {
     results.push(`✅ ${archiveName}`);
   }
 
-  ui.alert(`📦 아카이빙 완료 (${dateTag})\n\n${results.join('\n')}\n\n아카이브 시트는 숨김 처리되었습니다.\n시트 탭 우클릭 → 숨겨진 시트 보기로 확인 가능합니다.`);
+  ui.alert(`📦 아카이빙 완료 (${dateTag})\n\n${results.join('\n')}\n\n시트 탭 우클릭 → 숨겨진 시트 보기로 확인 가능합니다.`);
 }
 
 // ── [🆔 person_id 관리] ───────────────────────
