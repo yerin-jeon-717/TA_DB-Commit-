@@ -58,6 +58,8 @@ function onOpen() {
     .addItem('⚙️ 엔진 설정 시트 초기화/생성', 'setupSettingSheet')
     .addSeparator()
     .addSubMenu(ui.createMenu('📦 4. 월별 아카이빙')
+      .addItem('⚙️ 아카이브 스프레드시트 설정 (최초 1회)', 'setupArchiveSpreadsheet')
+      .addSeparator()
       .addItem('📦 현재 통합_ 시트 월별 아카이브', 'runMonthlyArchive'))
     .addSeparator()
     .addSubMenu(ui.createMenu('☁️ 5. Supabase 동기화')
@@ -747,10 +749,37 @@ function clearAllColors() {
 // ── [📦 월별 아카이빙] ────────────────────────
 
 /**
- * 모든 통합_ 시트를 현재 연월 태그로 복사해 아카이브.
- * 실행 시점의 연월(예: 2026.04)을 기준으로 시트명 생성.
- * 같은 달에 이미 아카이브가 존재하면 건너뜀.
- * 아카이브 시트는 숨김 처리.
+ * 아카이브 전용 스프레드시트 ID를 ScriptProperties에 등록.
+ * 최초 1회 실행. 이후 runMonthlyArchive()가 해당 스프레드시트에 복사.
+ */
+function setupArchiveSpreadsheet() {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.prompt(
+    '📦 아카이브 스프레드시트 설정',
+    '아카이브용 Google 스프레드시트 URL 또는 ID를 입력하세요.\n(비워두면 새 스프레드시트를 자동 생성합니다)',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = res.getResponseText().trim();
+  let id = input;
+  const urlMatch = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (urlMatch) id = urlMatch[1];
+
+  if (!id) {
+    const newSs = SpreadsheetApp.create('📦 인재풀 아카이브');
+    id = newSs.getId();
+    ui.alert(`✅ 새 아카이브 스프레드시트 자동 생성\nID: ${id}\n\nGoogle Drive에서 확인 후 공유 설정하세요.`);
+  }
+
+  PropertiesService.getScriptProperties().setProperty('ARCHIVE_SPREADSHEET_ID', id);
+  ui.alert('✅ 아카이브 스프레드시트 등록 완료!');
+}
+
+/**
+ * 모든 통합_ 시트를 아카이브 전용 스프레드시트에 복사.
+ * 시트명: "APR 26.4월 아카이빙 시트"
+ * 같은 달 중복 실행 시 건너뜀.
  *
  * 권장 순서: 아카이빙 → 새 데이터 import → GAS 파이프라인 → person_id 생성 → Supabase sync
  */
@@ -759,26 +788,32 @@ function runMonthlyArchive() {
   const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
   if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
 
+  const archiveId = PropertiesService.getScriptProperties().getProperty('ARCHIVE_SPREADSHEET_ID');
+  if (!archiveId) return ui.alert('⚠️ 아카이브 스프레드시트가 설정되지 않았습니다.\n먼저 [📦 아카이브 스프레드시트 설정]을 실행하세요.');
+
+  let archiveSs;
+  try { archiveSs = SpreadsheetApp.openById(archiveId); }
+  catch(e) { return ui.alert('❌ 아카이브 스프레드시트를 열 수 없습니다.\n권한 또는 ID를 확인하세요.\n' + e.message); }
+
   const now = new Date();
   const yy = Utilities.formatDate(now, "GMT+9", "yy");
-  const m  = String(now.getMonth() + 1);  // 앞자리 0 없음 (4월 → "4")
-  const dateTag = `${yy}.${m}월`;          // 예: "26.4월"
+  const m  = String(now.getMonth() + 1);
+  const dateTag = `${yy}.${m}월`;
   const results = [];
 
   for (const sheet of targets) {
-    const companyName = sheet.getName().replace(/^통합_/, "");  // "통합_APR" → "APR"
+    const companyName = sheet.getName().replace(/^통합_/, "");
     const archiveName = `${companyName} ${dateTag} 아카이빙 시트`;
-    if (ss.getSheetByName(archiveName)) {
+    if (archiveSs.getSheetByName(archiveName)) {
       results.push(`⚠️ ${archiveName}: 이미 존재 — 건너뜀`);
       continue;
     }
-    const copy = sheet.copyTo(ss);
+    const copy = sheet.copyTo(archiveSs);
     copy.setName(archiveName);
-    copy.hideSheet();
     results.push(`✅ ${archiveName}`);
   }
 
-  ui.alert(`📦 아카이빙 완료 (${dateTag})\n\n${results.join('\n')}\n\n시트 탭 우클릭 → 숨겨진 시트 보기로 확인 가능합니다.`);
+  ui.alert(`📦 아카이빙 완료 (${dateTag})\n\n${results.join('\n')}\n\n아카이브 스프레드시트에서 확인하세요.`);
 }
 
 // ── [🆔 person_id 관리] ───────────────────────
