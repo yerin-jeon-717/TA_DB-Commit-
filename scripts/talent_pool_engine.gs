@@ -1,5 +1,5 @@
 /**
- * [v23.7] 인재풀 엔진
+ * [v23.8] 인재풀 엔진
  * 1. [Fix] 이름 번역: B열(Index 1) 강제 인식
  * 2. [📥수입] LinkedIn(5번째~), Remember(6번째~) 시트 수입
  * 3. [🏷️매핑] 인재별 컨텍스트 리포트 + 원본 수정 반영
@@ -19,13 +19,17 @@
  * 17. [v23.5] runRegionMapping Region 열 고정(M=13) — getLastColumn() 동적 계산 제거
  * 18. [v23.6] mergeLinkedinIntoRemember 복사 열 A~L(12) 고정 — 잉여 컬럼 유입 차단
  * 19. [v23.7] 월별 아카이빙 함수 추가 (runMonthlyArchive) + 메뉴 4번 섹션
+ * 20. [v23.8] Notion 인사이트 리포트 POC (generateNotionReport) + 메뉴 5번 섹션
  */
 
 // ── 전역 상수 ──────────────────────────────────
-const SETTING_SHEET_NAME = "⚙️_엔진설정";
-const SHEET_DUP_REPORT   = "🔍 중복 대조 리포트";
-const SHEET_CATEGORY_MAP = "📋 카테고리 매핑 리포트";
-const SUPABASE_URL       = "https://gthajfbofpvyrwuhxfah.supabase.co";
+const SETTING_SHEET_NAME    = "⚙️_엔진설정";
+const SHEET_DUP_REPORT      = "🔍 중복 대조 리포트";
+const SHEET_CATEGORY_MAP    = "📋 카테고리 매핑 리포트";
+const SUPABASE_URL          = "https://gthajfbofpvyrwuhxfah.supabase.co";
+const NOTION_API_URL        = "https://api.notion.com/v1";
+const NOTION_VERSION        = "2022-06-28";
+const NOTION_REPORT_PARENT  = "62cd7c0bb9cf47d1b338b58e6c62588a";  // 리포트 생성 위치
 
 let _cfgCache    = undefined;
 let _allCfgCache = undefined;
@@ -33,7 +37,7 @@ let _allCfgCache = undefined;
 // ── 메뉴 ──────────────────────────────────────
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 인재풀 엔진 v23.7')
+  ui.createMenu('🚀 인재풀 엔진 v23.8')
     .addSubMenu(ui.createMenu('🛠️ 1. 데이터 준비')
       .addItem('📥 링크드인 데이터 가져오기', 'importLinkedInData')
       .addItem('📥 리멤버 데이터 가져오기', 'importRememberData')
@@ -62,7 +66,12 @@ function onOpen() {
       .addSeparator()
       .addItem('📦 현재 통합_ 시트 월별 아카이브', 'runMonthlyArchive'))
     .addSeparator()
-    .addSubMenu(ui.createMenu('☁️ 5. Supabase 동기화')
+    .addSubMenu(ui.createMenu('📊 5. Notion 인사이트 리포트')
+      .addItem('🔑 Notion Token 설정 (최초 1회)', 'setupNotionToken')
+      .addSeparator()
+      .addItem('📊 인사이트 리포트 생성', 'generateNotionReport'))
+    .addSeparator()
+    .addSubMenu(ui.createMenu('☁️ 6. Supabase 동기화')
       .addItem('🆔 person_id 일괄 생성 (M열)', 'generatePersonIds')
       .addSeparator()
       .addItem('📤 현재 통합_ 시트만 업로드', 'syncCurrentSheetToSupabase')
@@ -890,6 +899,208 @@ function generatePersonIds() {
   }
 
   ui.alert(`✅ person_id 생성 완료\n신규: ${created}건 / 기존 유지: ${skipped}건\n\n* M열에 person_id가 채워졌습니다.\n* 이제 Supabase 업로드를 실행하세요.`);
+}
+
+// ── [📊 Notion 인사이트 리포트] ──────────────────
+
+function setupNotionToken() {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.prompt('🔑 Notion Token 설정', 'Integration Token을 입력하세요 (secret_...)', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  const token = res.getResponseText().trim();
+  if (!token.startsWith('secret_')) return ui.alert('⚠️ 올바른 형식이 아닙니다. secret_... 형태여야 합니다.');
+  PropertiesService.getScriptProperties().setProperty('NOTION_TOKEN', token);
+  ui.alert('✅ Notion Token 등록 완료!');
+}
+
+function generateNotionReport() {
+  const ui = SpreadsheetApp.getUi(), ss = SpreadsheetApp.getActiveSpreadsheet();
+  const token = PropertiesService.getScriptProperties().getProperty('NOTION_TOKEN');
+  if (!token) return ui.alert('⚠️ Notion Token이 없습니다.\n[🔑 Notion Token 설정]을 먼저 실행하세요.');
+
+  // ── 1. 현재 데이터 수집 ──────────────────────
+  const targets = ss.getSheets().filter(s => s.getName().startsWith("통합_") && !s.isSheetHidden());
+  if (targets.length === 0) return ui.alert("통합_ 시트가 없습니다.");
+
+  const currentData = {};   // {company: {total, byJob, byRegion}}
+  const personMap   = {};   // {pid: {name, company, role, team}}
+  const currentPids = new Set();
+
+  for (const sheet of targets) {
+    const company = sheet.getName().replace(/^통합_/, "");
+    const tMap = getColMap(sheet);
+    const data  = sheet.getDataRange().getValues();
+    const info  = {total: 0, byJob: {}, byRegion: {}};
+
+    for (let i = 1; i < data.length; i++) {
+      const name = (data[i][tMap["이름"]] || "").toString().trim();
+      if (!name) continue;
+      info.total++;
+
+      const job    = (data[i][tMap["대분류(직무)"]] || "미분류").toString().trim() || "미분류";
+      const region = (data[i][tMap["Region"]] || "미분류").toString().trim() || "미분류";
+      const pid    = tMap["person_id"] !== undefined ? (data[i][tMap["person_id"]] || "").toString().trim() : "";
+      const role   = (data[i][tMap["직책"]] || "").toString().trim();
+      const team   = (data[i][tMap["팀"]] || "").toString().trim();
+
+      info.byJob[job] = (info.byJob[job] || 0) + 1;
+      region.split("|").forEach(r => { const rt = r.trim(); if (rt) info.byRegion[rt] = (info.byRegion[rt] || 0) + 1; });
+
+      if (pid) {
+        currentPids.add(pid);
+        if (!personMap[pid]) personMap[pid] = {name: name.split("\n").pop(), company, role, team};
+      }
+    }
+    currentData[company] = info;
+  }
+
+  const totalAll = Object.values(currentData).reduce((s, c) => s + c.total, 0);
+
+  // ── 2. 아카이브 비교 ─────────────────────────
+  let newHires = [], departures = [], hasArchive = false;
+  const archiveId = PropertiesService.getScriptProperties().getProperty('ARCHIVE_SPREADSHEET_ID');
+  if (archiveId) {
+    try {
+      const archiveSs = SpreadsheetApp.openById(archiveId);
+      const prevPids  = new Set();
+      const latestMap = {};  // {company: {sheet, score}}
+
+      archiveSs.getSheets()
+        .filter(s => s.getName().includes("아카이빙 시트"))
+        .forEach(s => {
+          const m = s.getName().match(/^(.+?) (\d{2})\.(\d+)월 아카이빙 시트$/);
+          if (!m) return;
+          const [, co, yy, mo] = m, score = parseInt(yy) * 100 + parseInt(mo);
+          if (!latestMap[co] || score > latestMap[co].score) latestMap[co] = {sheet: s, score};
+        });
+
+      for (const {sheet} of Object.values(latestMap)) {
+        const tMap = getColMap(sheet);
+        if (!("person_id" in tMap)) continue;
+        const data = sheet.getDataRange().getValues();
+        for (let i = 1; i < data.length; i++) {
+          const pid = (data[i][tMap["person_id"]] || "").toString().trim();
+          if (pid) prevPids.add(pid);
+        }
+      }
+
+      if (prevPids.size > 0) {
+        hasArchive = true;
+        currentPids.forEach(pid => { if (!prevPids.has(pid)) newHires.push(pid); });
+        prevPids.forEach(pid => { if (!currentPids.has(pid)) departures.push(pid); });
+      }
+    } catch(e) { /* 아카이브 접근 불가 시 무시 */ }
+  }
+
+  // ── 3. 블록 구성 ─────────────────────────────
+  const now    = new Date();
+  const yy     = Utilities.formatDate(now, "GMT+9", "yy");
+  const mo     = String(now.getMonth() + 1);
+  const dateTag = `${yy}.${mo}월`;
+  const title   = `📊 인재풀 인사이트 리포트 — ${dateTag}`;
+
+  const txt = (content, color) => {
+    const o = {type:"text", text:{content}};
+    if (color) o.annotations = {color};
+    return [o];
+  };
+
+  const blocks = [];
+
+  // 요약 callout
+  let summary = `총 ${totalAll}명  (${Object.keys(currentData).length}개사)`;
+  if (hasArchive) summary += `   |   🆕 신규 ${newHires.length}명   |   🚪 이직 ${departures.length}명`;
+  blocks.push({type:"callout", callout:{rich_text: txt(summary), icon:{emoji:"📊"}, color:"blue_background"}});
+  blocks.push({type:"divider"});
+
+  // 회사별 현황
+  blocks.push({type:"heading_2", heading_2:{rich_text: txt("🏢 회사별 현황")}});
+  for (const [company, info] of Object.entries(currentData)) {
+    blocks.push({type:"heading_3", heading_3:{rich_text: txt(`${company}  (${info.total}명)`)}});
+    const jobs = Object.entries(info.byJob).sort((a,b) => b[1]-a[1]);
+    if (jobs.length) blocks.push({type:"paragraph", paragraph:{rich_text: txt(`직무: ${jobs.map(([k,v]) => `${k} ${v}명`).join("  ·  ")}`, "gray")}});
+    const regs = Object.entries(info.byRegion).sort((a,b) => b[1]-a[1]).filter(([k]) => k !== "미분류" && k !== "NA");
+    if (regs.length) blocks.push({type:"paragraph", paragraph:{rich_text: txt(`Region: ${regs.map(([k,v]) => `${k} ${v}명`).join("  ·  ")}`, "gray")}});
+  }
+  blocks.push({type:"divider"});
+
+  // 직무 대분류 전체
+  blocks.push({type:"heading_2", heading_2:{rich_text: txt("📋 직무 대분류 분포")}});
+  const totalJobMap = {};
+  Object.values(currentData).forEach(c => Object.entries(c.byJob).forEach(([k,v]) => { totalJobMap[k] = (totalJobMap[k]||0)+v; }));
+  Object.entries(totalJobMap).sort((a,b) => b[1]-a[1]).forEach(([k,v]) => {
+    blocks.push({type:"bulleted_list_item", bulleted_list_item:{rich_text: txt(`${k}  ${v}명  (${Math.round(v/totalAll*100)}%)`)}});
+  });
+  blocks.push({type:"divider"});
+
+  // Region 분포
+  blocks.push({type:"heading_2", heading_2:{rich_text: txt("🌏 Region 분포")}});
+  const totalRegMap = {};
+  Object.values(currentData).forEach(c => Object.entries(c.byRegion).forEach(([k,v]) => { totalRegMap[k] = (totalRegMap[k]||0)+v; }));
+  Object.entries(totalRegMap).sort((a,b) => b[1]-a[1]).filter(([k]) => k !== "미분류" && k !== "NA").forEach(([k,v]) => {
+    blocks.push({type:"bulleted_list_item", bulleted_list_item:{rich_text: txt(`${k}  ${v}명`)}});
+  });
+  blocks.push({type:"divider"});
+
+  // 신규 입사 / 이직 감지
+  if (hasArchive) {
+    blocks.push({type:"heading_2", heading_2:{rich_text: txt(`🆕 신규 입사 감지 — ${newHires.length}명`)}});
+    if (!newHires.length) {
+      blocks.push({type:"paragraph", paragraph:{rich_text: txt("이번 달 신규 입사 감지 없음")}});
+    } else {
+      newHires.slice(0, 50).forEach(pid => {
+        const p = personMap[pid];
+        if (p) blocks.push({type:"bulleted_list_item", bulleted_list_item:{rich_text: txt(`${p.name}  |  ${p.company}  |  ${p.role||"-"}  |  ${p.team||"-"}`)}});
+      });
+      if (newHires.length > 50) blocks.push({type:"paragraph", paragraph:{rich_text: txt(`외 ${newHires.length-50}명`, "gray")}});
+    }
+    blocks.push({type:"divider"});
+
+    blocks.push({type:"heading_2", heading_2:{rich_text: txt(`🚪 이직 감지 — ${departures.length}명`)}});
+    if (!departures.length) {
+      blocks.push({type:"paragraph", paragraph:{rich_text: txt("이번 달 이직 감지 없음")}});
+    } else {
+      blocks.push({type:"paragraph", paragraph:{rich_text: txt(`총 ${departures.length}명  (이전 아카이브에 있었으나 현재 데이터에서 사라진 인원)`, "gray")}});
+    }
+  } else {
+    blocks.push({type:"callout", callout:{rich_text: txt("아카이빙 이력이 없어 신규입사/이직 감지를 건너뜁니다. 다음 달부터 비교 가능합니다."), icon:{emoji:"ℹ️"}, color:"yellow_background"}});
+  }
+
+  // ── 4. Notion API 호출 ────────────────────────
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    'Content-Type': 'application/json',
+    'Notion-Version': NOTION_VERSION
+  };
+
+  const createRes = UrlFetchApp.fetch(NOTION_API_URL + '/pages', {
+    method: 'post', headers,
+    payload: JSON.stringify({
+      parent: {type:"page_id", page_id: NOTION_REPORT_PARENT},
+      properties: {title: {title: [{type:"text", text:{content: title}}]}},
+      children: blocks.slice(0, 100)
+    }),
+    muteHttpExceptions: true
+  });
+
+  if (createRes.getResponseCode() >= 300) {
+    ui.alert('❌ Notion 오류:\n' + createRes.getContentText().slice(0, 400));
+    return;
+  }
+
+  const pageId = JSON.parse(createRes.getContentText()).id;
+
+  // 100개 초과 시 추가 append
+  for (let i = 100; i < blocks.length; i += 100) {
+    Utilities.sleep(400);
+    UrlFetchApp.fetch(`${NOTION_API_URL}/blocks/${pageId}/children`, {
+      method: 'patch', headers,
+      payload: JSON.stringify({children: blocks.slice(i, i+100)}),
+      muteHttpExceptions: true
+    });
+  }
+
+  ui.alert(`✅ Notion 리포트 생성 완료!\n\n${title}\n\n부모 페이지 하단에 생성되었습니다.\nNotion에서 원하는 위치로 이동해주세요.`);
 }
 
 // ── [☁️ Supabase 동기화] ──────────────────────
