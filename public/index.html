@@ -990,15 +990,10 @@
   <div class="layout">
     <aside>
       <div class="filter-section">
-        <div class="filter-label">통합 검색</div>
-        <div class="multi-search-box" id="multiSearchBox">
-          <input id="searchInput" placeholder="키워드 입력 후 Enter" autocomplete="off" />
-        </div>
-      </div>
-
-      <div class="filter-section">
         <div class="filter-label">이름</div>
-        <input id="nameInput" class="f-input" placeholder="이름으로 검색" autocomplete="off" />
+        <div class="multi-search-box" id="nameSearchBox">
+          <input id="nameInput" placeholder="이름 입력 후 Enter" autocomplete="off" />
+        </div>
       </div>
 
       <div class="filter-section">
@@ -1021,7 +1016,6 @@
         <div id="jobBadgeContainer"></div>
       </div>
 
-      <!-- [FIX] Region: 텍스트 입력 → searchable-select 드롭다운 -->
       <div class="filter-section">
         <div class="filter-label">Region</div>
         <div id="regionSelect" class="searchable-select">
@@ -1030,6 +1024,13 @@
           <div class="ss-dropdown"></div>
         </div>
         <div id="regionBadgeContainer"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">통합 검색</div>
+        <div class="multi-search-box" id="multiSearchBox">
+          <input id="searchInput" placeholder="키워드 입력 후 Enter" autocomplete="off" />
+        </div>
       </div>
 
       <button id="resetBtn" class="reset-btn">필터 초기화</button>
@@ -1123,9 +1124,10 @@
     let currentSort = "default";
     let selectedCompanyTab = "ALL";
     let excludeIntern = false;
-    let selectedCompany = null;
-    let selectedJob = null;
-    let selectedRegion = null;
+    let selectedCompany = [];
+    let selectedJob = [];
+    let selectedRegion = [];
+    let nameKeywords = [];
     let searchKeywords = []; // 멀티 키워드
     let bookmarks = [];
     let checkedBookmarks = new Set(); // 체크된 북마크 ID
@@ -1137,6 +1139,7 @@
     const searchInput   = document.getElementById("searchInput");
     const multiSearchBox = document.getElementById("multiSearchBox");
     const nameInput = document.getElementById("nameInput");
+    const nameSearchBox = document.getElementById("nameSearchBox");
 
     const resetBtn = document.getElementById("resetBtn");
     const internToggleEl = document.getElementById("internToggle");
@@ -1195,6 +1198,43 @@
         multiSearchBox.insertBefore(tag, searchInput);
       });
     }
+
+    function renderNameTags() {
+      nameSearchBox.querySelectorAll(".search-tag").forEach(t => t.remove());
+      nameKeywords.forEach((kw, idx) => {
+        const tag = document.createElement("span");
+        tag.className = "search-tag";
+        tag.innerHTML = `${esc(kw)}<span class="tag-x" data-idx="${idx}">×</span>`;
+        tag.querySelector(".tag-x").addEventListener("click", () => {
+          nameKeywords.splice(idx, 1);
+          renderNameTags();
+          currentPage = 1;
+          update();
+        });
+        nameSearchBox.insertBefore(tag, nameInput);
+      });
+    }
+
+    nameSearchBox.addEventListener("click", () => nameInput.focus());
+
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const kw = nameInput.value.trim().toLowerCase();
+        if (kw && !nameKeywords.includes(kw)) {
+          nameKeywords.push(kw);
+          renderNameTags();
+        }
+        nameInput.value = "";
+        currentPage = 1;
+        update();
+        e.preventDefault();
+      } else if (e.key === "Backspace" && nameInput.value === "" && nameKeywords.length > 0) {
+        nameKeywords.pop();
+        renderNameTags();
+        currentPage = 1;
+        update();
+      }
+    });
 
     // 박스 클릭 시 input 포커스
     multiSearchBox.addEventListener("click", () => searchInput.focus());
@@ -1305,16 +1345,14 @@
       });
     }
 
-    // [FIX] readonly 제거 + 검색어 입력 시 드롭다운 필터링 동작하도록 수정
-    function setupSearchableSelect(wrapper, getOptions, onSelect, getBadgeContainer, getSelectedValue) {
+    // 멀티 선택 searchable-select: 항목 클릭 시 배열에 추가/제거, 배지 복수 표시
+    function setupSearchableSelect(wrapper, getOptions, getBadgeContainer, getSelectedValues, toggleValue) {
       const input = wrapper.querySelector(".ss-input");
       const dropdown = wrapper.querySelector(".ss-dropdown");
 
       function close() {
         wrapper.classList.remove("open");
-        // 선택된 값이 있으면 표시, 없으면 placeholder로 복원
-        input.value = getSelectedValue() || "";
-        if (!getSelectedValue()) input.value = "";
+        input.value = "";
       }
 
       function open() {
@@ -1338,18 +1376,16 @@
           return;
         }
 
-        const selected = getSelectedValue();
+        const selected = getSelectedValues();
         filtered.forEach((opt) => {
           const div = document.createElement("div");
-          div.className = "ss-option" + (opt === selected ? " selected" : "");
+          div.className = "ss-option" + (selected.includes(opt) ? " selected" : "");
           div.textContent = opt;
           div.addEventListener("mousedown", (e) => {
-            // mousedown으로 처리해야 input blur보다 먼저 실행됨
             e.preventDefault();
-            onSelect(opt === selected ? null : opt);
-            input.value = opt === selected ? "" : opt;
-            close();
-            renderBadge();
+            toggleValue(opt);
+            renderBadges();
+            renderOptions(input.value || "");
             currentPage = 1;
             update();
           });
@@ -1357,23 +1393,22 @@
         });
       }
 
-      function renderBadge() {
-        const value = getSelectedValue();
+      function renderBadges() {
+        const values = getSelectedValues();
         const container = getBadgeContainer();
         container.innerHTML = "";
-        if (!value) return;
-        const badge = document.createElement("div");
-        badge.className = "selected-badge";
-        // [FIX] esc() 적용
-        badge.innerHTML = `<span>${esc(value)}</span><span class="clear-x">×</span>`;
-        badge.querySelector(".clear-x").addEventListener("click", () => {
-          onSelect(null);
-          input.value = "";
-          renderBadge();
-          currentPage = 1;
-          update();
+        values.forEach((v) => {
+          const badge = document.createElement("div");
+          badge.className = "selected-badge";
+          badge.innerHTML = `<span>${esc(v)}</span><span class="clear-x">×</span>`;
+          badge.querySelector(".clear-x").addEventListener("click", () => {
+            toggleValue(v);
+            renderBadges();
+            currentPage = 1;
+            update();
+          });
+          container.appendChild(badge);
         });
-        container.appendChild(badge);
       }
 
       input.addEventListener("focus", () => {
@@ -1386,7 +1421,6 @@
       });
 
       input.addEventListener("blur", () => {
-        // blur 시 약간 지연 후 닫기 (mousedown 이벤트가 먼저 처리되도록)
         setTimeout(close, 150);
       });
 
@@ -1394,7 +1428,7 @@
         if (!wrapper.contains(e.target)) close();
       });
 
-      renderBadge();
+      renderBadges();
     }
 
     function setExcludeIntern(val) {
@@ -1403,16 +1437,17 @@
     }
 
     function applyFilters() {
-      const nameQ = (nameInput.value || "").trim().toLowerCase();
       // 입력 중인 텍스트도 임시 키워드로 포함
+      const inputNameQ = (nameInput.value || "").trim().toLowerCase();
+      const allNameKeywords = inputNameQ ? [...nameKeywords, inputNameQ] : nameKeywords;
       const inputQ = (searchInput.value || "").trim().toLowerCase();
       const allKeywords = inputQ ? [...searchKeywords, inputQ] : searchKeywords;
 
       filterData = RAWDATA.filter((p) => {
         if (selectedCompanyTab !== "ALL" && (p.company || "기타") !== selectedCompanyTab) return false;
-        if (selectedCompany && (p.company || "") !== selectedCompany) return false;
-        if (selectedJob && (p.job || "") !== selectedJob) return false;
-        if (selectedRegion && !(p.region || "").split("|").includes(selectedRegion)) return false;
+        if (selectedCompany.length && !selectedCompany.includes(p.company || "")) return false;
+        if (selectedJob.length && !selectedJob.includes(p.job || "")) return false;
+        if (selectedRegion.length && !selectedRegion.some(r => (p.region || "").split("|").includes(r))) return false;
 
         if (excludeIntern) {
           const role = (p.role || "").toLowerCase();
@@ -1421,7 +1456,8 @@
               role.includes("intern") || job.includes("intern")) return false;
         }
 
-        if (nameQ && !(p.name || "").toLowerCase().includes(nameQ)) return false;
+        // 이름 키워드: 하나라도 매칭되면 포함 (OR)
+        if (allNameKeywords.length && !allNameKeywords.some(kw => (p.name || "").toLowerCase().includes(kw))) return false;
 
         if (allKeywords.length === 0) return true;
         const hay = [p.name, p.company, p.job, p.team, p.role,
@@ -1842,9 +1878,12 @@
         const jobOptions     = [...new Set(RAWDATA.map(p => p.job).filter(Boolean))].sort();
         const regionOptions  = [...new Set(RAWDATA.flatMap(p => (p.region || "").split("|").filter(Boolean)))].sort();
 
-        setupSearchableSelect(companySelect, () => companyOptions, (v) => { selectedCompany = v; }, () => companyBadgeContainer, () => selectedCompany);
-        setupSearchableSelect(jobSelect,     () => jobOptions,     (v) => { selectedJob = v; },     () => jobBadgeContainer,     () => selectedJob);
-        setupSearchableSelect(regionSelect,  () => regionOptions,  (v) => { selectedRegion = v; },  () => regionBadgeContainer,  () => selectedRegion);
+        setupSearchableSelect(companySelect, () => companyOptions, () => companyBadgeContainer, () => selectedCompany,
+          (v) => { const i = selectedCompany.indexOf(v); i >= 0 ? selectedCompany.splice(i, 1) : selectedCompany.push(v); });
+        setupSearchableSelect(jobSelect, () => jobOptions, () => jobBadgeContainer, () => selectedJob,
+          (v) => { const i = selectedJob.indexOf(v); i >= 0 ? selectedJob.splice(i, 1) : selectedJob.push(v); });
+        setupSearchableSelect(regionSelect, () => regionOptions, () => regionBadgeContainer, () => selectedRegion,
+          (v) => { const i = selectedRegion.indexOf(v); i >= 0 ? selectedRegion.splice(i, 1) : selectedRegion.push(v); });
 
         update();
 
@@ -1871,10 +1910,12 @@
         searchKeywords = [];
         renderSearchTags();
         nameInput.value = "";
+        nameKeywords = [];
+        renderNameTags();
         selectedCompanyTab = "ALL";
-        selectedCompany = null;
-        selectedJob = null;
-        selectedRegion = null;
+        selectedCompany = [];
+        selectedJob = [];
+        selectedRegion = [];
         setExcludeIntern(false);
         document.querySelectorAll(".company-tab").forEach((b) => b.classList.remove("active"));
         const first = document.querySelector('.company-tab[data-company="ALL"]');
